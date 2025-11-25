@@ -297,14 +297,7 @@ class DataBase():
         self.engine = self._create_local_sqlite_engine(db_file)
 
         self._setup_logger()
-        # # Setup logger
-        # self.logger = logging.getLogger('Database')
-        # if not self.logger.handlers:
-        #     handler = logging.StreamHandler()
-        #     formatter = logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s")
-        #     handler.setFormatter(formatter)
-        #     self.logger.addHandler(handler)
-        #     self.logger.setLevel(logging.INFO)
+        
 
 
     def _setup_logger(self):
@@ -499,66 +492,8 @@ class DataBase():
         return n
         
     
-    # def extract_data_from_source(self, table_name=None, time_column_name=None, variable_column_names=None, select_all=True, starttime=None, endtime=None, 
-    #                              filter_tagnames_column=None, filter_tagnames=None, filter_eq=None, filter_gt=None, filter_lt=None, filter_geq=None, filter_leq=None):
-    #     """ 
-    #     extract data from the specified source (file or database) and 
-    #     store them in the _raw_data table in the local database
+    
 
-
-    #     Returns
-    #     -------
-    #     None
-
-        
-    #     """
-    #     self.table_name = table_name
-    #     self.time_column = time_column_name
-    #     self.time_series_column = variable_column_names
-    #     self.select_all = select_all
-
-    #     # query options
-    #     self.starttime = starttime
-    #     self.endtime = endtime
-    #     self.filter_tagnames_column = filter_tagnames_column
-    #     self.filter_eq = filter_eq
-    #     self.filter_tagnames = filter_tagnames
-    #     self.filter_gt = filter_gt
-    #     self.filter_lt = filter_lt
-    #     self.filter_geq = filter_geq
-    #     self.filter_leq = filter_leq
-        
-    #     if self.data_source == 'file':
-    #         self._raw_data = self._read_from_file()
-    #     elif self.data_source == 'database':
-    #         assert self.table_name is not None,  'The variable "table_name" should be defined for data source of type "database".'
-    #         self._raw_data = self._read_from_database()
-        
-    #     if self.time_column is None:
-    #         self._check_time_column()
-    #     print(self._raw_data)
-    #     write_to_db(self._raw_data, table_name, self.connection)
-
-    #     print(f'Raw data has been succesfully extracted from the source of type "{self.data_source}" and stored in the "{table_name}" table of the "{self.local_database_name}" database!')
-
-    # def _read_from_file(self):
-    #     """ 
-    #     read the raw data from the specified source files
-
-
-    #     Returns
-    #     -------
-    #     a pandas dataframe containing the raw data read from the file source
-
-        
-    #     """
-        
-    #     _raw_data = read_files(self._raw_data_path, self.file_names, self.file_type, self.file_sep, self.file_encoding)
-
-    #     # if self.time_column is not None:    
-    #     #     _raw_data = _raw_data.rename(columns={self.time_column : 'Datetime'})
-
-    #     return _raw_data
     def _read_from_file(self) -> pd.DataFrame:
         if not self.path_to_data_source or not self.file_names:
             raise ValueError("path_to_data_source and file_names must be set for file source")
@@ -580,28 +515,7 @@ class DataBase():
 
         
 
-    # def _read_from_database(self):
-    #     """ 
-    #     read the raw data from the specified source database
-
-
-    #     Returns
-    #     -------
-    #     a pandas dataframe containing the raw data read from the database source
-
-        
-    #     """
-    #     conn_source = create_database_connection(self.database_type, self.database_name, self._raw_data_path, 
-    #                                                        server=self.server, user=self.user, password=self.password, port=self.port, driver=self.driver,
-    #                                                        linked_server_name=self.linked_server_name, linked_server_provider=self.linked_server_provider, linked_server_datasource=self.linked_server_datasource)
-        
-    #     _raw_data = create_dataframe(conn_source, self.table_name, self._historian, self.time_column, self.time_series_column, self.select_all, self.starttime, self.endtime, 
-    #                                  self.filter_tagnames_column, self.filter_eq, self.filter_tagnames, self.filter_gt, self.filter_lt, self.filter_geq, self.filter_leq)
-            
-    #     # if self.time_column is not None:
-    #     #     _raw_data = _raw_data.rename(columns={self.time_column : 'Datetime'})
-
-    #     return _raw_data
+    
     def _read_from_database(self, opts: ExtractOptions) -> pd.DataFrame:
         conn_source = create_database_connection(
             self.database_type.value if self.database_type else None,
@@ -640,18 +554,7 @@ class DataBase():
         return df
     
     
-    # def _check_time_column(self):
-    #     """
-    #     checks which column in the dataframe contains datetime
-
-    #     """
-    #     for col in self._raw_data.columns:
-    #         if self._raw_data[col].dtype == 'object':
-    #             try:
-    #                 _ = pd.to_datetime(self._raw_data[col], format='mixed')
-    #                 self.time_column = col
-    #             except ValueError:
-    #                 pass
+    
     @staticmethod
     def _check_time_column(df: pd.DataFrame, *, min_parse_ratio: float = 0.8) -> Optional[str]:
         """Return the name of a likely time column or None.
@@ -846,177 +749,8 @@ class DataBase():
         return self._raw_data.index.name
     
 
-    # @property
-    # def formatted_data(self):
-    #     """
-    #     returns a dataframe containing the formatted data
-
-    #     """
-    #     try:
-    #         return self._raw_data_formatted 
-    #     except:
-    #         raise AttributeError('Formatted data does not exist! First try "format_data".')
-        
-    # @property
-    # def simulation_data(self):
-    #     """
-    #     returns a dataframe containing the formatted data
-
-    #     """
-       
-    #     try:
-    #         return self._raw_data_simulation
-    #     except:
-    #         print('The simulation data is the same as the formatted data.')
-    #         return self.formatted_data
-
-
-    # @property
-    # def file_source_params(self):
-    #     """
-    #     returns the dictionary containing the file source parameters
-        
-    #     """
-
-        
-    #     file_params = {'Path to the raw data files' : self._raw_data_path,
-    #                     'Data file names' : self.file_names,
-    #                     'Data file type' : self.file_type,
-    #                     'Data file separator' : self.file_sep,
-    #                     'Data file encoding' : self.file_encoding}
-        
-
-    #     # if print_to_screen:
-    #     #     print(f'List of file data source parameters: \n')
-    #     #     for k, v in file_params.items():
-    #     #         print(f'{k} = {v}')
-
-
-    #     return file_params
-
-    # @property
-    # def database_query_params(self):
-    #     """
-    #     returns the dictionary containing the database query parameters
-        
-    #     """
-        
-    #     query_params = {'Database type' : self.database_type,
-    #                     'Database name' : self.database_name, 
-    #                     'Table name' : self.table_name,
-    #                     'Query start time' : self.starttime, 
-    #                     'Query end time' : self.endtime, 
-    #                     'Query filter name' : self.filter_tagnames_column, 
-    #                     'Query filter values' : self.filter_eq,  
-    #                     'Time column name' : self.time_column, 
-    #                     'Time series column name' : self.time_series_column, 
-    #                     'Select all' : self.select_all}
-        
-    #     # if print_to_screen:
-    #     #     print(f'List of database query parameters: \n')
-    #     #     for k, v in query_params.items():
-    #     #         print(f'{k} = {v}')
-
-
-    #     return query_params
-
-
-    # @property
-    # def database_config_params(self):
-    #     """
-    #     returns the dictionary containing the database configuration parameters
-        
-    #     """
-
-    #     config_params = {'Server name' : self.server,
-    #                      'Username' : self.user,
-    #                      'Password' : self.password,
-    #                      'Port' : self.port,
-    #                      'Driver' : self.driver}
-        
-    #     if self._historian:
-    #         config_params['Linked server name'] = self.linked_server_name
-    #         config_params['Linked server provider'] = self.linked_server_provider
-    #         config_params['Linked server datasource'] = self.linked_server_datasource
-  
-
-    #     # if print_to_screen:
-    #     #     print('List of database configuration parameters: \n')
-    #     #     for k, v in config_params.items():
-    #     #         print(f'{k} = {v}')
-
-    #     return config_params
-
-    # @property
-    # def database_path(self):
-    #     """
-    #     returns the path to the stored database
-        
-    #     """
-    #     return self.path_to_local_db
     
 
-    # @property
-    # def tables(self):
-
-    #     cur = self.connection.cursor()
-    #     cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
-    #     tables = cur.fetchall()
-
-    #     tables_list = []
-    #     for table in tables:
-    #         tables_list.append(table[0])
-
-    #     cur.close()
-
-    #     return tables_list
-    
-    # @property
-    # def time_column_name(self):
-    #     return self.time_column
-    
-    # @time_column_name.setter
-    # def time_column_name(self, name):
-    #     self.time_column = name
-
-    
-    # def set_time_index(self, idx, name=None):
-
-    #     if isinstance(idx, str):
-    #         self.time_column = idx
-    #         self._raw_data.set_index(idx, inplace=True, drop=True)
-            
-    #     elif isinstance(idx, int):
-    #         self.time_column = self._raw_data.columns[idx]
-    #         self._raw_data.set_index(self._raw_data.iloc[:, idx], inplace=True, drop=True)
-            
-
-    #     if name is not None:
-    #         self._raw_data.index.names = [name]
-    #         self.time_column = name
-
-
-    # def get_data_from_table(self, table_name):
-
-    #     df = pd.read_sql_query(f"SELECT * FROM {table_name}", self.connection)
-
-    #     return df
-    
-    # def rename_table(self, old_name, new_name):
-    #     cur = self.connection.cursor()
-    #     assert old_name in self.tables(), f"{old_name} table does not exist in the database! "
-        
-    #     cur.execute(f"RENAME TABLE {old_name} TO {new_name}")
-    #     print(f'The name of {old_name} has been changed to {new_name}')
-            
-    #     cur.close()
-
-    
-    # def run_query(self, sql_cmd):
-
-    #     df = pd.read_sql_query(f"{sql_cmd}", self.connection)
-
-    #     return df
 
     def _ensure_dtindex(self, df: pd.DataFrame, *, time_col: str = "Datetime") -> pd.DataFrame:
         """Ensure a DatetimeIndex; if absent, try to build from `time_col`."""
@@ -1129,81 +863,7 @@ class DataBase():
         self.logger.info("Resampled to rule=%s, rows=%d, written to '%s'", rule, len(to_write), out_table)
         return resampled, rows
 
-    # def resample_data(self, data, resampling_freq, resampling_unit):
-    #     """
-    #     resamples the raw data with the given frequency
-
-    #     Parameters
-    #     ----------
-    #     data : pd.DataFrame
-    #         a pandas dataframe containing the raw data 
-    #     resampling_freq : int
-    #         the frequency of resampling
-    #     resampling_unit : str
-    #         unit for resampling data, options: minute, hour, day, week or month
-    #     Returns
-    #     -------
-    #     a pandas dataframe containing the resampled data, creates a new table in the database
-    #     """
-
-    #     assert data.index.inferred_type == 'datetime64', 'index of the data should be of datetime64 format!'
     
-    #     if resampling_unit == 'minute' or resampling_unit == 'min':
-    #         self._resampling_rule = str(resampling_freq) + resampling_unit[:3]
-    #     elif resampling_unit in ['hour', 'day', 'week','month']:
-    #         self._resampling_rule = str(resampling_freq) + resampling_unit[0].upper()
-    #     else:
-    #         print('Resampling unit is not valid! Please choose a valid unit \
-    #                 from minute, hour, day, week or month')
-
-    #     #data_resampled = data[::resampling_freq]
-    #     self.data_resampled = data.asfreq(freq=self._resampling_rule)
-    #     # write_to_db(data_resampled, 'formatted_data_resampled', self._conn, index=True)
-    #     print("Formatted data have been successfully resampled to {} {}!".format(resampling_freq, resampling_unit))
-        
-    #     return self.data_resampled
-
-    # def extract_simulation_data(self, data, start_date=None, end_date=None, simulation_period=None, simulation_mode='historical'):
-    #     """
-    #     returns the simulation data for the given period
-
-    #     Parameters
-    #     ----------
-        
-        
-    #     Returns
-    #     -------
-    #     None
-        
-    #     """
-    #     self.simulation_mode = simulation_mode
-        
-        
-    #     try:
-    #         if self.simulation_mode == 'real-time':
-    #             self._simulation_period = simulation_period
-    #             freq, unit = find_data_freq(self._simulation_period)
-    #             last_idx = data.index[-1]
-    #             first_idx = last_idx - pd.Timedelta(freq, unit)
-    #             self._raw_data_simulation = data[data.index > first_idx]
-    #         elif self.simulation_mode == 'historical':
-    #             self._simulation_hist_start = parser.parse(start_date)
-    #             self._simulation_hist_end = parser.parse(end_date)
-    #             self._raw_data_simulation = data.loc[self._simulation_hist_start:self._simulation_hist_end]
-    #     except:
-    #         print('Either simulation mode is not valid or data is not available! Please choose "real-time" or "historical" \
-    #             as the simulation mode or check the time frame of the data.')
-
-    #     # self._dataset_sim = query_from_db("SELECT * from _raw_data_formatted WHERE strftime('%W', datetime) == '{}'".format(week_number), self._conn, None, None)
-
-    #     write_to_db(self._raw_data_simulation, 'raw_data_simulation', self.connection)
-        
-    #     if simulation_mode == 'real-time':
-    #         print(f'Simulation is in "{simulation_mode}" mode. Data for the last {simulation_period} has been successfully extracted and stored in the database in "raw_data_simulation" table.')
-    #     elif simulation_mode == 'historical':
-    #         print(f'Simulation is in "{simulation_mode}" mode. Data from {start_date} to {end_date} has been successfully extracted and stored in the database in "raw_data_simulation" table.')
-    #     else:
-    #         raise ValueError('Simulation mode is invalid! Options: "real-time", "historical".')
     def _normalize_time_column(
         self,
         df: pd.DataFrame,
@@ -1462,121 +1122,9 @@ class DataBase():
         self.logger.info("format_data: wrote %d rows to table '%s'.", rows, out_table)
         return tsdf, rows
 
-    # def format_data(self, resample=False, resampling_freq=5, \
-    #     resampling_unit='minute', keep_original_freq=False, different_sim_period=False, simulation_mode='historical', \
-    #     simulation_period=None, start_date=None, end_date=None):
-    #     """
-    #     formats the raw data
+   
+   
 
-    #     Parameters
-    #     ----------
-    #     resample : bool
-    #         indicates if there is a need to resample data
-    #     resampling_freq : int
-    #         frequency of the resampling 
-    #     resampling_unit : str
-    #         unit for resampling data, options: minute, hour, day, week or month
-    #     different_sim_period : bool
-    #         indicates whether simulation period is different than raw data time frame
-    #     simulation_mode : str
-    #         indicates the simulation mode, options: real-time or historical
-    #     simulation_period : str
-    #         defines the period for real time simulation
-    #     start_date : list
-    #         start date for the historical simulation, format: [Y,M,D,H,m]
-    #     end_date : list
-    #         end date for the historical simulation, format: [Y,M,D,H,m]
-    #     Returns
-    #     ------
-    #     None, replaces the data with the resampled data
-
-    #     """
-    #     self.resample = resample
-    #     self.resampling_freq = resampling_freq
-    #     self.resampling_unit = resampling_unit
-    #     self.different_sim_period = different_sim_period
-    #     self.keep_original_freq = keep_original_freq
-        
-    #     # if self._resample:
-    #     #     self.__raw_data_resampled = self._resample_data(self.__raw_data, self._resampling_freq, self._resampling_unit)
-    #     #     self._dataset = ww.OnlineSensorBased(self.__raw_data_resampled, self._timecolumn)
-    #     # else:
-    #     #     self._dataset = ww.OnlineSensorBased(self.__raw_data, self._timecolumn) 
-    #     self._raw_data.replace(r'^([A-Za-z]|_)+$', 'NaN', regex=True, inplace=True)
-    #     self._dataset = ww.OnlineSensorBased(self._raw_data, self.time_column) 
-    #     self._dataset.set_tag('_raw_data')
-
-    #     #self.dataset.set_units()
-    #     # self._dataset.replace(r'^([A-Za-z]|_)+$', 'NaN', regex=True, inplace=True)
-    #     # self._dataset.to_datetime(self.time_column, time_format='%d-%m-%y %H:%M')
-    #     self._dataset.to_datetime(self.time_column, time_format='mixed')
-
-    #     self._dataset.set_index(self.time_column, key_is_time=True, drop=True, inplace=True)
-    #     if self.time_column != 'Datetime':
-    #         self._dataset.data.rename_axis('Datetime', axis='index', inplace=True)
-    #     self._dataset.drop_index_duplicates()
-    #     self._dataset.to_float()
-    #     # print('Raw data have been successfully formatted!')
-        
-        
-    #     if self.resample:
-    #          self._raw_data_formatted = self.resample_data(self._dataset.data, self.resampling_freq, self.resampling_unit)
-    #     else:
-    #         self._raw_data_formatted = self._dataset.data
-        
-    #     write_to_db(self._raw_data_formatted, 'raw_data_formatted', self.connection, index=True)
-
-    #     if self.keep_original_freq:
-    #         if self.resample == True:
-    #             write_to_db(self._dataset.data, 'raw_data_formatted_original_freq', self.connection, index=True)
-    #             print('A copy of the formatted data with original frequency is stored in the database!')
-    #         else:
-    #             print('Data are not resampled yet! Try resampling first and change resample option to True.')
-                
-        
-    #     print("Formatted data have been successfully stored in the database!")
-
-    #     if self.different_sim_period:
-    #         self.simulation_data(simulation_mode, simulation_period, start_date, end_date)
-
-    #     return None
-
-
-    # def add_external_data(self, path, file_name, table_name, time_column=None,
-    #                       file_type='text', sep='\t', encoding='iso-8859-1'):
-    #     """
-    #     read external data from file(s) and store them in a new table in the database
-
-    #     Parameters
-    #     ----------
-    #     path : str
-    #         path to the data file
-    #     file_name : list
-    #         list of the name of the files to read
-    #     table_name : str
-    #         name of the table to store the new data in the database
-    #     time_column : str
-    #         the name of the column to be used as time
-    #     file_type : str
-    #         extension of the files to read, options: excel, text, csv
-    #     sep : str
-    #         the separating element necessary for reading text/csv files e.g. \t
-    #     encoding : str
-    #         encoding used for the data files
-        
-    #     Return
-    #     ------
-    #     None
-    #     """
-
-    #     _data = read_files(path, file_name, file_type, sep, encoding)
-
-    #     if time_column is not None:
-    #         _data.set_index(time_column, inplace=True)
-
-    #     write_to_db(_data, table_name, self.connection, index=True)
-
-    #     print(f"External data from {file_name} have been successfully load and stored in the database table '{table_name}'!")
     
     def add_dataframe(
         self,
