@@ -1,6 +1,5 @@
-======
-wwtwin
-======
+## wwtwin
+-----
 
 
 wwtwin is a python package for creating digital twin pipelines for (waste)water systems.
