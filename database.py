@@ -22,13 +22,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from __future__ import annotations
 
 
-# from data_reading_functions import join_files
-from database_functions import create_database_connection, create_dataframe, find_data_freq, read_files
-# import wwdata as ww
-# import datetime as dt
+from database_functions import create_database_connection, create_dataframe, read_files
 import pandas as pd
-# import os
-# from dateutil import parser
 import logging
 
 from dateutil import parser as dtparser

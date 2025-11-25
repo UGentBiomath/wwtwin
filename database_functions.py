@@ -23,15 +23,9 @@ import sys
 import os
 from os import listdir
 import pandas as pd
-# import scipy as sp
 import numpy as np
-# import matplotlib.pyplot as plt   
-# import xlrd
 import sqlite3
 from sqlite3 import Error
-# import pyodbc
-# import psycopg2
-# import pymysql
 from sqlalchemy import create_engine
 from sqlalchemy import text
 import openpyxl
