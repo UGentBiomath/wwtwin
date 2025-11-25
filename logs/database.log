@@ -1,0 +1,10 @@
+[2025-11-25 12:24:05,727] INFO: Logger initialized for database
+[2025-11-25 12:24:15,298] INFO: Read 1345 rows via legacy read_files()
+[2025-11-25 12:24:15,315] INFO: Loaded 1345 rows into local table 'raw_data'
+[2025-11-25 13:02:26,509] INFO: Logger initialized for database
+[2025-11-25 13:02:28,813] INFO: Read 1345 rows via legacy read_files()
+[2025-11-25 13:02:28,831] INFO: Loaded 1345 rows into local table 'raw_data'
+[2025-11-25 13:02:41,853] INFO: Real-time slice: last=2006-06-15 00:00:00.001000, lookback=0 days 06:00:00, rows=24
+[2025-11-25 13:02:41,863] INFO: Wrote 24 simulation rows to table 'simulation_data'.
+[2025-11-25 13:02:53,006] INFO: Resampled to rule=1h, rows=337, written to 'resampled_data'
+[2025-11-25 13:03:00,794] INFO: format_data: wrote 1345 rows to table 'formatted_data'.
