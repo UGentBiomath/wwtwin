@@ -33,7 +33,7 @@ from sqlalchemy.engine import Engine, Connection
 from urllib.parse import quote_plus
 
 logger = logging.getLogger(__name__)
-SqlConn = Union[Engine, Connection, Any]  # Any allows a DB-API connection as a fallback
+SqlConn = Union[Engine, Connection, Any]  
 
 
 def _ensure_linked_server(
@@ -52,7 +52,6 @@ def _ensure_linked_server(
     if not linked_server_name:
         raise ValueError("linked_server_name must be provided.")
 
-    # Check existence
     exists_sql = text(
         """
         SELECT 1
@@ -61,8 +60,6 @@ def _ensure_linked_server(
         """
     )
 
-    # Build EXEC for sp_addlinkedserver. We can't parameterize identifiers directly,
-    # so we use quoted string parameters for provider and datasrc values.
     create_sql = text(
         """
         EXEC master.dbo.sp_addlinkedserver
@@ -111,7 +108,6 @@ def create_database_engine(
     driver: Optional[str] = None,
     readonly: bool = True,
     mode: str = "ro",
-    # Historian / linked-server specifics:
     linked_server_name: str = "historian_db",
     linked_server_provider: str = "Historian OLE DB Provider",
     linked_server_datasource: Optional[str] = None,
@@ -167,7 +163,6 @@ def create_database_engine(
     engine = create_engine(url, future=True, connect_args=connect_args)
     logger.info("Created SQLAlchemy engine for %s (%s)", database_name, dbt)
 
-    # Historian path: ensure linked server exists
     if dbt == "historian":
         _ensure_linked_server(
             engine,
@@ -195,8 +190,6 @@ def read_hist_table(engine: Engine, linked_server: str, remote_query: str):
       SELECT TagName, DateTime, Value FROM ihRawData WHERE TagName IN ('P1','P2') AND DateTime >= '2024-01-01'
     """
     sql = text(f"SELECT * FROM OPENQUERY([{linked_server}], :q)")
-    # Note: some drivers require the remote query string to be single-quoted in T-SQL;
-    # parameter binding helps avoid quoting issues.
     with engine.connect() as conn:
         return pd.read_sql_query(sql, conn, params={"q": remote_query})
     
@@ -246,11 +239,10 @@ def _get_sqlalchemy_connection(conn: SqlConn) -> Connection:
         return conn
     if isinstance(conn, Engine):
         return conn.connect()
-    # DB-API fallback: wrap via SQLAlchemy's creator pattern (one-shot)
     from sqlalchemy import create_engine
 
-    raw = conn  # DB-API connection object
-    engine = create_engine("sqlite://", creator=lambda: raw)  # URL string is ignored by creator
+    raw = conn 
+    engine = create_engine("sqlite://", creator=lambda: raw) 
     return engine.connect()
 
 
@@ -273,7 +265,6 @@ def create_dataframe(
     *,
     schema: Optional[str] = None,
     limit: Optional[int] = None,
-    # Historian OPENQUERY path:
     linked_server_name: Optional[str] = None,
     openquery_sql: Optional[str] = None,
 ) -> pd.DataFrame:
@@ -289,14 +280,11 @@ def create_dataframe(
     -------
     pd.DataFrame
     """
-    # Historian (OPENQUERY) branch
     if is_historian:
         if not linked_server_name or not openquery_sql:
             raise ValueError(
                 "Historian mode requires both 'linked_server_name' and 'openquery_sql'."
             )
-        # OPENQUERY string literal must be embedded; parameterization is driver-dependent.
-        # Safely single-quote the remote SQL:
         remote_sql = openquery_sql.replace("'", "''")
         tsql = f"SELECT * FROM OPENQUERY([{linked_server_name}], '{remote_sql}')"
         with _get_sqlalchemy_connection(conn) as sa_conn:
@@ -304,7 +292,6 @@ def create_dataframe(
             logger.info("Read %d rows via OPENQUERY on linked server '%s'", len(df), linked_server_name)
             return df
 
-    # Regular RDBMS path
     if not table_name and not select_all:
         raise ValueError("table_name must be provided when not using historian/OPENQUERY.")
 
@@ -315,8 +302,6 @@ def create_dataframe(
         cols: List[str] = _as_list(variable_columns) or []
         if time_column and time_column not in cols:
             cols = [time_column] + cols
-        # naive quoting (assumes simple identifiers). For mixed-case or reserved words,
-        # you can wrap with double quotes or brackets based on dialect if needed.
         cols_sql = ", ".join(cols)
 
     fq_table = f"{schema}.{table_name}" if schema else table_name
@@ -324,7 +309,6 @@ def create_dataframe(
     where_clauses: List[str] = []
     params: Dict[str, Any] = {}
 
-    # Time window
     if time_column:
         if starttime is not None:
             where_clauses.append(f"{time_column} >= :starttime")
@@ -333,7 +317,6 @@ def create_dataframe(
             where_clauses.append(f"{time_column} <= :endtime")
             params["endtime"] = pd.to_datetime(endtime)
 
-    # Tag filters
     if filter_tagnames_column and filter_tagnames is not None:
         tags = _as_list(filter_tagnames) or []
         if tags:
@@ -341,7 +324,6 @@ def create_dataframe(
             where_clauses.append(f"{filter_tagnames_column} IN ({placeholders})")
             params.update({f"tag{i}": t for i, t in enumerate(tags)})
 
-    # Column comparisons
     def _cmp(prefix: str, op: str, mapping: Optional[Dict[str, Any]]):
         if not mapping:
             return
@@ -425,7 +407,6 @@ def _read_file(
 
     try:
         if ext in (".csv", ".txt"):
-            # Auto-detect separator from the first line
             sep: Optional[str] = None
             with path.open("r", encoding=encoding, errors="ignore") as f:
                 first_line = f.readline()
@@ -509,7 +490,6 @@ def _get_header_length(
 
     try:
         if ext in (".xls", ".xlsx", ".zrx"):
-            # Excel-like: inspect first column of successive rows until we hit a non-comment
             wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
             try:
                 sheet = wb.worksheets[0]
@@ -526,7 +506,6 @@ def _get_header_length(
                 wb.close()
 
         elif ext in (".txt", ".csv"):
-            # Text/CSV: count leading lines that start with the comment char
             with path.open("r", encoding="utf8", errors="ignore") as f:
                 while True:
                     pos = f.tell()
@@ -534,7 +513,6 @@ def _get_header_length(
                     if not line:
                         break
                     if not line or line[0] != comment:
-                        # Rewind so downstream readers can start from the first data line if needed
                         f.seek(pos)
                         break
                     headerlength += 1
@@ -552,7 +530,6 @@ def _get_header_length(
         logger.exception("Failed to detect header length in %s: %s", path, e)
         raise
 
-# def read_files(path,files,sep=',',comment='#',encoding='utf8',decimal='.', to_csv=False):
 def read_files(
         path: Union[str, os.PathLike],
         files: Sequence[str],
@@ -596,7 +573,6 @@ def read_files(
         logger.warning("No files provided to read in %s", base)
         return pd.DataFrame()
 
-    # Ensure deterministic order
     files_sorted: List[str] = sorted(files)
 
     frames: List[pd.DataFrame] = []
@@ -608,13 +584,13 @@ def read_files(
 
         _, ext = os.path.splitext(file_name)
         try:
-            header_len = _get_header_length(str(file_path), ext, comment)  # uses your helper
+            header_len = _get_header_length(str(file_path), ext, comment) 
         except Exception as e:
             logger.warning("Failed to detect header length for %s: %s. Assuming 0.", file_path, e)
             header_len = 0
 
         try:
-            df = _read_file(  # your helper (must return a DataFrame)
+            df = _read_file(  
                 str(file_path),
                 ext=ext,
                 skiprows=header_len,

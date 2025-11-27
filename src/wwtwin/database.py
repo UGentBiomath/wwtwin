@@ -78,7 +78,7 @@ class DatabaseType(str, Enum):
 class _ValidatedPaths:
     raw_data_path: Optional[Path]
     local_db_dir: Path
-    local_db_path: Path # full path *without* suffix
+    local_db_path: Path 
 
 
 
@@ -98,7 +98,7 @@ class ExtractOptions:
     filter_lt: Optional[Dict[str, Any]] = None
     filter_geq: Optional[Dict[str, Any]] = None
     filter_leq: Optional[Dict[str, Any]] = None
-    target_table: str = "_raw_data" # local table name
+    target_table: str = "_raw_data" 
 
 
 
@@ -172,7 +172,6 @@ class DataBase():
         name of the linked server data source to be created on a Microsoft SQL Server for connecting to the historian, only used for database type of "historian"
     
     """
-    # --- Public attributes (typed) ---
     data_source: DataSourceType
     path_to_data_source: Optional[Path]
     path_to_local_db: Path
@@ -199,9 +198,8 @@ class DataBase():
     linked_server_datasource: Optional[str]
 
 
-    # Computed
     is_historian: bool
-    engine: Engine # SQLAlchemy engine for the *local* SQLite DB
+    engine: Engine 
 
 
     def __init__(self,
@@ -220,7 +218,6 @@ class DataBase():
         password: Optional[str] = None,
         port: Optional[int] = None,
         driver: Optional[str] = None,
-        # table/time/filter args intentionally omitted for now (commented in your code)
         linked_server_name: Optional[str] = None,
         linked_server_provider: Optional[str] = None,
         linked_server_datasource: Optional[str] = None,
@@ -245,7 +242,6 @@ class DataBase():
         self.database_type = DatabaseType(str(database_type)) if database_type else None
 
 
-        # Assign simple attributes
         self.file_names = list(file_names) if file_names is not None else None
         self.sep = sep
         self.encoding = encoding
@@ -260,35 +256,28 @@ class DataBase():
         self.linked_server_datasource = linked_server_datasource
 
 
-        # Validate and prepare paths
         vp = self._validate_and_prepare_paths(path_to_data_source, path_to_local_db, local_database_name)
         self.path_to_data_source = vp.raw_data_path
         self.path_to_local_db = vp.local_db_dir
         self.local_database_name = vp.local_db_path.name
 
 
-        # Validate source-specific requirements
         self._validate_source_requirements()
 
 
-        # Historian flag
         self.is_historian = self.database_type == DatabaseType.HISTORIAN
 
 
-        # Create or reuse local SQLite DB file
         db_file = (vp.local_db_path.with_suffix(".db"))
         if db_file.exists():
             if overwrite:
                 db_file.unlink()
-            # else: keep existing DB
+            
         else:
-            # Ensure directory exists
             db_file.parent.mkdir(parents=True, exist_ok=True)
-            # Touch to ensure a file exists (SQLAlchemy will also create as needed)
             db_file.touch()
 
 
-        # Create SQLAlchemy engine for local SQLite
         self.engine = self._create_local_sqlite_engine(db_file)
 
         self._setup_logger()
@@ -300,28 +289,23 @@ class DataBase():
         os.makedirs("logs", exist_ok=True)
         log_file = os.path.join("logs", f"database.log")
 
-        # Create a StringIO stream for in-memory logging
         self._log_stream = io.StringIO()
 
-        # Create and configure logger
         self.logger = logging.getLogger("database")
         self.logger.setLevel(logging.INFO)
 
-        # Remove existing handlers (prevents duplicates in interactive runs)
         for h in list(self.logger.handlers):
             self.logger.removeHandler(h)
 
-        # Console handler
+        
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s"))
         self.logger.addHandler(console_handler)
 
-        # File handler
         file_handler = logging.FileHandler(log_file)
         file_handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s"))
         self.logger.addHandler(file_handler)
 
-        # In-memory handler
         memory_handler = logging.StreamHandler(self._log_stream)
         memory_handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s"))
         self.logger.addHandler(memory_handler)
@@ -347,7 +331,6 @@ class DataBase():
         return path
      
                 
-    # --- Helpers ---
     @staticmethod
     def _validate_and_prepare_paths(
         path_to_data_source: Optional[Union[str, os.PathLike]],
@@ -359,7 +342,6 @@ class DataBase():
             raise FileNotFoundError(f"path_to_data_source does not exist: {raw_path}")
 
 
-        # Default local DB dir to HOME
         local_dir = Path(path_to_local_db) if path_to_local_db else Path(os.getenv("HOME", "."))
         local_dir = local_dir.expanduser().resolve()
         if not local_dir.exists():
@@ -371,7 +353,6 @@ class DataBase():
             raise ValueError("local_database_name must be a non-empty string")
 
 
-        # Store path without suffix; we will append .db later
         local_db_path = (local_dir / db_name)
         return _ValidatedPaths(raw_data_path=raw_path, local_db_dir=local_dir, local_db_path=local_db_path)
 
@@ -383,7 +364,6 @@ class DataBase():
         elif self.data_source == DataSourceType.FILE:
             if self.path_to_data_source is None or self.file_names is None:
                 raise ValueError("For data_source='file', 'path_to_data_source' and 'file_names' must be provided")
-        # Optional: check that the files exist (same extension assumed)
             missing = [fn for fn in self.file_names if not (self.path_to_data_source / fn).exists()]
             if missing:
                 raise FileNotFoundError(f"The following files were not found: {missing}")
@@ -392,12 +372,10 @@ class DataBase():
                 
     @staticmethod
     def _create_local_sqlite_engine(db_file: Path) -> Engine:
-        # Proper SQLAlchemy SQLite URL
         url = f"sqlite+pysqlite:///{db_file.as_posix()}"
         return create_engine(url, future=True)
 
 
-    # --- Convenience properties ---
     @property
     def local_db_file(self) -> Path:
         return (self.path_to_local_db / f"{self.local_database_name}.db").resolve()    
@@ -420,7 +398,7 @@ class DataBase():
         filter_leq: Optional[Dict[str, Any]] = None,
         *,
         target_table: str = "raw_data",
-        if_exists: str = "replace", # or "append"
+        if_exists: str = "replace", 
         chunksize: Optional[int] = None,
         ) -> int:
         """
@@ -456,7 +434,6 @@ class DataBase():
             raise ValueError("Unsupported data_source")
 
 
-        # Auto-detect time column if not provided
         if not opts.time_column_name:
             detected = self._check_time_column(df)
             if detected:
@@ -471,7 +448,6 @@ class DataBase():
             return 0
 
 
-        # Standardize time dtype if we have a candidate
         if opts.time_column_name and opts.time_column_name in df.columns:
             df = df.copy()
             df[opts.time_column_name] = pd.to_datetime(df[opts.time_column_name], errors="coerce")
@@ -515,7 +491,7 @@ class DataBase():
         conn_source = create_database_connection(
             self.database_type.value if self.database_type else None,
             self.database_name,
-            self.path_to_data_source, # aligns with your original _raw_data_path
+            self.path_to_data_source, 
             server=self.server,
             user=self.user,
             password=self.password,
@@ -559,7 +535,6 @@ class DataBase():
         Accepts column if >= `min_parse_ratio` of non-null values parse to datetime.
         """
         candidates = list(df.columns)
-        # 1) object-like string timestamps
         for col in candidates:
             if df[col].dtype == "object":
                 s = pd.to_datetime(df[col], errors="coerce", format="mixed")
@@ -567,7 +542,6 @@ class DataBase():
                 total = df[col].notna().sum()
                 if total > 0 and (non_null / total) >= min_parse_ratio:
                     return col
-        # 2) numeric epochs
         for col in candidates:
             if pd.api.types.is_integer_dtype(df[col]) or pd.api.types.is_float_dtype(df[col]):
                 s = pd.to_datetime(df[col], errors="coerce", unit="s")
@@ -760,7 +734,7 @@ class DataBase():
     def _rule_from_freq_unit(self, resampling_freq: int, resampling_unit: str) -> str:
         unit = resampling_unit.strip().lower()
         if unit in ("minute", "min"):
-            suffix = "T"             # minutes
+            suffix = "T"             
         elif unit == "hour":
             suffix = "H"
         elif unit == "day":
@@ -779,13 +753,13 @@ class DataBase():
         resampling_freq: Optional[int] = None,
         resampling_unit: Optional[str] = None,
         *,
-        rule: Optional[str] = None,                       # e.g. "15min", "1H" (overrides freq+unit if given)
-        how: Optional[AggName] = None,                    # aggregation name (None = asfreq)
-        agg: Optional[Dict[str, Union[AggName, Sequence[AggName]]]] = None,  # per-column agg
-        fill: Optional[FillName] = None,                  # ffill/bfill/interpolate after resample
-        limit: Optional[int] = None,                      # max consecutive fill steps (for ffill/bfill)
-        origin: Optional[str] = None,                     # pandas resample origin
-        offset: Optional[str] = None,                     # "30min" alignment offset
+        rule: Optional[str] = None,                       
+        how: Optional[AggName] = None,                    
+        agg: Optional[Dict[str, Union[AggName, Sequence[AggName]]]] = None,  
+        fill: Optional[FillName] = None,                  
+        limit: Optional[int] = None,                      
+        origin: Optional[str] = None,                     
+        offset: Optional[str] = None,                     
         label: Literal["left", "right"] = "left",
         closed: Literal["left", "right"] = "left",
         time_col: str = "Datetime",
@@ -799,54 +773,43 @@ class DataBase():
         -------
         (resampled_df, rows_written)
         """
-        # 1) Build resampling rule
         if rule is None:
             if resampling_freq is None or resampling_unit is None:
                 raise ValueError("Provide either `rule='15min'` OR (`resampling_freq`, `resampling_unit`).")
             rule = self._rule_from_freq_unit(resampling_freq, resampling_unit)
 
-        # 2) Ensure DatetimeIndex
         tsdf = self._ensure_dtindex(data, time_col=time_col)
 
-        # 3) Perform resample
         if how is None and agg is None:
-            # Pure calendar alignment without aggregation
             resampled = tsdf.asfreq(freq=rule)
         else:
             r = tsdf.resample(
                 rule,
-                origin=origin,        # None uses timestamp of first row
-                offset=offset,        # allows shifting boundaries like "30min"
+                origin=origin,        
+                offset=offset,        
                 label=label,
                 closed=closed,
             )
             if agg is not None:
                 resampled = r.agg(agg)
             else:
-                # Single aggregation name over all numeric columns
-                fn = getattr(pd.core.resample.Resampler, how, None)  # type: ignore[attr-defined]
+                fn = getattr(pd.core.resample.Resampler, how, None)  
                 if how not in {"mean", "sum", "min", "max", "median", "first", "last"}:
                     raise ValueError("Unsupported `how`. Use one of mean,sum,min,max,median,first,last or provide `agg`.")
                 resampled = getattr(r, how)()
 
-        # 4) Optional gap filling
         if fill is not None:
             if fill == "ffill":
                 resampled = resampled.ffill(limit=limit)
             elif fill == "bfill":
                 resampled = resampled.bfill(limit=limit)
             elif fill == "interpolate":
-                # numeric interpolation only; adjust method if needed
                 resampled = resampled.interpolate(limit=limit)
             else:
                 raise ValueError("Unsupported fill. Use: ffill, bfill, interpolate.")
 
-        # 5) Write to DB (ensure a time column exists for storage)
         _to_write = resampled.copy()
-        # if time_col not in _to_write.columns:
-        #     _to_write[time_col] = _to_write.index
         to_write = _to_write.reset_index()
-        # to_write = self._normalize_time_column(to_write, time_col=time_col, to_utc=False)
         self._resampled_data = to_write
         rows = self.write_to_db(
             data=to_write,
@@ -880,7 +843,6 @@ class DataBase():
             n = int(ts.isna().sum())
             raise ValueError(f"{n} rows have unparsable '{time_col}' values")
 
-        # Store as ISO string; pandas + sqlite is happiest with TEXT timestamps
         out[time_col] = ts.dt.strftime("%Y-%m-%dT%H:%M:%S.%f%z").str.replace(r"(\+00:00)?$", "", regex=True)
         return out
     
@@ -894,7 +856,6 @@ class DataBase():
         """
         if isinstance(data.index, pd.DatetimeIndex):
             if data.index.tz is not None:
-                # keep tz-aware; you can localize/convert upstream as needed
                 return data.sort_index()
             return data.sort_index()
 
@@ -920,15 +881,12 @@ class DataBase():
         if not isinstance(period, str) or not period.strip():
             raise ValueError("simulation_period must be a non-empty string (e.g., '24h', '7d').")
         s = period.strip().lower()
-        # Try pandas first: handles '7d', '24h', '30m', '1h30m', '2D', etc.
         try:
             return pd.Timedelta(s)
         except Exception:
             pass
-        # ISO8601-ish (very light support)
         if s.startswith("pt") or s.startswith("p"):
             try:
-                # let pandas try again; it actually handles many ISO forms
                 return pd.Timedelta(s.upper())
             except Exception:
                 pass
@@ -977,10 +935,8 @@ class DataBase():
         if data is None:
             data = self._raw_data
 
-        # 1) Ensure a DatetimeIndex
         tsdf = self._coerce_time_index(data, time_col=time_col)
 
-        # 2) Slice by mode
         if simulation_mode == "real-time":
             if not simulation_period:
                 raise ValueError("simulation_period is required for simulation_mode='real-time'.")
@@ -1002,7 +958,6 @@ class DataBase():
             end = dtparser.parse(end_date)
             if start > end:
                 raise ValueError(f"start_date {start} is after end_date {end}.")
-            # Pandas loc on DateTimeIndex is inclusive for strings; ensure both datetimes
             df_slice = tsdf.loc[start:end]
             self.logger.info(
                 'Historical slice: start=%s, end=%s, rows=%d',
@@ -1012,24 +967,20 @@ class DataBase():
         else:
             raise ValueError("simulation_mode must be 'real-time' or 'historical'.")
 
-        # 3) Persist to local DB
         if df_slice.empty:
             self.logger.warning("Simulation slice produced 0 rows; table '%s' will be replaced with empty set.", out_table)
 
-        # write as a regular table; ensure time column exists for storage
         _to_write = df_slice.copy()
         # if time_col not in _to_write.columns:
         #     _to_write[time_col] = _to_write.index
 
-        # Optional: enforce normalized time strings for SQLite friendliness
         to_write = _to_write.reset_index()
-        # to_write = self._normalize_time_column(to_write, time_col=time_col, to_utc=False)
         self._simulation_data = to_write
         rows = self.write_to_db(
             data=to_write,
             table_name=out_table,
             method=write_method,
-            index=False,              # don't persist the pandas index as an 'index' column
+            index=False,              
             index_label=None,
         )
 
@@ -1041,9 +992,7 @@ class DataBase():
         data: pd.DataFrame,
         *,
         time_col: str = "Datetime",
-        # keep behavior when dropping duplicate timestamps
         keep: Literal["first", "last"] = "last",
-        # optionally restrict which columns to convert; by default convert all non-datetime columns
         numeric_columns: Optional[Sequence[str]] = None,
         out_table: str = "formatted_data",
         write_method: Literal["fail", "replace", "append"] = "replace",
@@ -1061,12 +1010,10 @@ class DataBase():
         """
         if data.empty:
             self.logger.warning("format_data: received empty DataFrame.")
-            # still create/replace an empty table with only the Datetime column
             empty = pd.DataFrame(index=pd.DatetimeIndex([], name="Datetime"))
             rows = self.write_to_db(empty.reset_index(), out_table, method=write_method, index=False)
             return empty, rows
 
-        # 1) Ensure a DatetimeIndex (use existing index or build from `time_col`)
         if isinstance(data.index, pd.DatetimeIndex):
             tsdf = data.copy()
         else:
@@ -1081,36 +1028,29 @@ class DataBase():
                 raise ValueError(f"format_data: {bad} rows have invalid '{time_col}' values.")
             tsdf = tsdf.set_index(time_col)
 
-        # 2) Drop duplicate timestamps (keep=first/last)
         if tsdf.index.has_duplicates:
             before = len(tsdf)
             tsdf = tsdf[~tsdf.index.duplicated(keep=keep)]
             logger.info("format_data: dropped %d duplicate timestamps (keep=%s).", before - len(tsdf), keep)
 
-        # 3) Convert data columns to float (coerce non-numeric -> NaN)
-        # Decide which columns to convert
         if numeric_columns is None:
-            # all non-datetime columns (index holds the datetime already)
             cols_to_convert = list(tsdf.columns)
         else:
             cols_to_convert = list(numeric_columns)
 
-        # Apply conversion
         for col in cols_to_convert:
             if col in tsdf.columns:
                 tsdf[col] = pd.to_numeric(tsdf[col], errors="coerce").astype(float)
 
-        # 4) Ensure index name is 'Datetime'
         tsdf.index = pd.DatetimeIndex(tsdf.index, name="Datetime")
 
-        # 5) Write to DB; store index as a proper Datetime column
-        to_write = tsdf.reset_index()  # brings 'Datetime' out as a column
+        to_write = tsdf.reset_index()  
         self._formatted_data = to_write
         rows = self.write_to_db(
             data=to_write,
             table_name=out_table,
             method=write_method,
-            index=False,                  # we already turned index into the 'Datetime' column
+            index=False,                 
             index_label=None,
         )
 
@@ -1131,7 +1071,6 @@ class DataBase():
         method: Literal["fail", "replace", "append"] = "append",
         index: bool = False,
         index_label: Optional[str] = None,
-        # --- indexing options ---
         create_index: bool = True,
         index_name: Optional[str] = None,
         index_columns: Optional[Sequence[str]] = None,
@@ -1177,11 +1116,9 @@ class DataBase():
 
         out = df.copy()
 
-        # Normalize time column if requested
         if normalize_time and time_col and time_col in out.columns:
             out = self._normalize_time_column(out, time_col=time_col, to_utc=False)
 
-        # Write to DB
         rows = self.write_to_db(
             data=out,
             table_name=table_name,
@@ -1191,7 +1128,6 @@ class DataBase():
         )
         self.logger.info("add_dataframe: wrote %d rows to table '%s'.", rows, table_name)
 
-        # Create index if requested
         if create_index:
             cols = list(index_columns) if index_columns else (
                 [time_col] if time_col and time_col in out.columns else []

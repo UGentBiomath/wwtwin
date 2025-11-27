@@ -78,9 +78,9 @@ StepKind = Literal["filter", "fill"]
 
 @dataclass
 class PipelineStep:
-    kind: StepKind                # "filter" | "fill"
-    key: str                      # friendly key (e.g., "moving_average", "interpolation")
-    method: str                   # actual OSB method name (e.g., "moving_average_filter")
+    kind: StepKind                
+    key: str                      
+    method: str                   
     column: str
     params: Dict[str, Any]
     enabled: bool = True
@@ -116,17 +116,14 @@ class DataProcessor:
                  data_type: str = 'WWTP',
                  experiment_tag: str = "pipeline",
                  time_unit: Optional[str] = None,
-                 #  columns: Optional[Iterable[str]] = None,
                  copy_input: bool = True,
                  
                  
                  ):
-        if isinstance(data, OnlineSensorBased): #hasattr(data, "data") and hasattr(data, "meta_valid"):
-            # assume it's already an OnlineSensorBased
-            self.osb = data  # type: ignore[assignment]
+        if isinstance(data, OnlineSensorBased): 
+            self.osb = data  
         else:
             df = data.copy() if (isinstance(data, pd.DataFrame) and copy_input) else data
-            # You already defined OnlineSensorBased elsewhere; we just construct it:
             self.osb = OnlineSensorBased(data=df, timedata_column=timedata_column, data_type=data_type,
                                          experiment_tag=experiment_tag, time_unit=time_unit)
         
@@ -154,28 +151,22 @@ class DataProcessor:
         os.makedirs("logs", exist_ok=True)
         log_file = os.path.join("logs", f"processor.log")
 
-        # Create a StringIO stream for in-memory logging
         self._log_stream = io.StringIO()
 
-        # Create and configure logger
         self.logger = logging.getLogger("processor")
         self.logger.setLevel(logging.INFO)
 
-        # Remove existing handlers (prevents duplicates in interactive runs)
         for h in list(self.logger.handlers):
             self.logger.removeHandler(h)
 
-        # Console handler
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s"))
         self.logger.addHandler(console_handler)
 
-        # File handler
         file_handler = logging.FileHandler(log_file)
         file_handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s"))
         self.logger.addHandler(file_handler)
 
-        # In-memory handler
         memory_handler = logging.StreamHandler(self._log_stream)
         memory_handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s"))
         self.logger.addHandler(memory_handler)
@@ -322,7 +313,7 @@ class DataProcessor:
         return large
 
     # =========================
-    # Pipeline DSL
+    # Pipeline functions
     # =========================
     def clear_pipeline(self, reset_data: bool = True) -> None:
         self.pipeline.clear()
@@ -333,18 +324,15 @@ class DataProcessor:
     
 
         if hasattr(self, "_original_osb"):
-            # if we stored a deep copy of the raw data initially
             self.osb = copy.deepcopy(self._original_osb)
         else:
             self._original_osb = copy.deepcopy(self.osb)
 
-        # reset internal warning flags and daily profiles
         self.osb._filling_warning_issued = False
         self.osb._rain_warning_issued = False
         if hasattr(self.osb, "daily_profile"):
             self.osb.daily_profile.clear()
 
-        # refresh cached index/time info
         if hasattr(self.osb, "_update_time"):
             self.osb._update_time()
 
@@ -379,8 +367,8 @@ class DataProcessor:
         columns: Optional[Sequence[str]] = None,
         *,
         arange: Optional[Tuple[Any, Any]] = None,
-        small_gap_limit: Optional[int] = None,   # in samples
-        interpolation_method: str = "time",      # for DatetimeIndex
+        small_gap_limit: Optional[int] = None,   
+        interpolation_method: str = "time",      
     ) -> None:
         """
         Default (per column):
@@ -438,35 +426,30 @@ class DataProcessor:
         if not isinstance(mv, pd.DataFrame):
             mv = pd.DataFrame(index=self.osb.data.index)
 
-        # Align index (fill new rows as 'original')
         mv = mv.reindex(self.osb.data.index)
 
-        # Create the column if missing
         if column not in mv.columns:
             mv[column] = "original"
         else:
-            # Replace any placeholders like '!!' with 'original'
             mv[column] = mv[column].where(mv[column].isin(
                 ["original", "filtered"] + [c for c in mv[column].unique() if str(c).startswith("filled_")]
             ), "original")
 
-        # Ensure dtype is string/object to avoid categorical surprises
         mv[column] = mv[column].astype(object)
 
         self.osb.meta_valid = mv
 
 
 
-    # =========================
-    # Run pipeline
-    # =========================
+    # =============================
+    # Run data processing pipeline
+    # =============================
     def run(self, dry_run: bool = False) -> List[Tuple[int, str, Dict[str, Any], Optional[str]]]:
         """
         Execute steps in order. Returns [(idx, method, params, error_or_none), ...].
         Warns about large gaps before the first fill for each column.
         """
         results: List[Tuple[int, str, Dict[str, Any], Optional[str]]] = []
-        # make sure meta_valid exists for all touched columns
         touched_cols = {s.column for s in self.pipeline if s.enabled}
         if touched_cols:
             self.osb.add_to_meta_valid(list(touched_cols))
@@ -485,7 +468,6 @@ class DataProcessor:
                 results.append((i, step.method, step.params, f"column '{step.column}' not found"))
                 continue
 
-            # setup for fill steps
             if step.kind == "fill":
                 self.osb._add_to_meta(step.column)
                 if not dry_run and step.column not in warned_cols:
@@ -539,7 +521,7 @@ class DataProcessor:
     def brute_force_filter_params(
         self,
         column: str,
-        key: str,                                  # e.g. "iqr", "zscore", "moving_average"
+        key: str,                                  
         param_grid: Dict[str, Sequence[Any]],
         *,
         base_kwargs: Optional[Dict[str, Any]] = None,
@@ -562,7 +544,6 @@ class DataProcessor:
                     return float((mv[col] == "filtered").mean())
                 return 1.0
 
-        # snapshot
         data0 = self.osb.data.copy()
         mv0 = self.osb.meta_valid.copy()
 
@@ -583,7 +564,6 @@ class DataProcessor:
             except Exception:
                 continue
 
-        # restore
         self.osb.data = data0
         self.osb.meta_valid = mv0
 
@@ -595,7 +575,7 @@ class DataProcessor:
     def brute_force_fill_params_with_reliability(
         self,
         column: str,
-        key: str,                                   # e.g. "interpolation", "kalman", ...
+        key: str,                                   
         param_grid: Dict[str, Sequence[Any]],
         *,
         test_data_range: Tuple[Any, Any],
@@ -617,10 +597,8 @@ class DataProcessor:
 
         base_options = {"to_fill": column, **(base_options or {})}
         if "arange" not in base_options:
-            # scorer needs arange to place synthetic gaps—default to test window
             base_options["arange"] = test_data_range
 
-        # snapshot
         data0 = self.osb.data.copy()
         mv0 = self.osb.meta_valid.copy()
         filled0 = getattr(self.osb, "filled", pd.DataFrame(index=self.osb.data.index)).copy()
@@ -650,7 +628,6 @@ class DataProcessor:
                     max_size_large_gaps=max_size_large_gaps,
                     **options,
                 )
-                # normalize to float
                 score_val = float(err) if isinstance(err, (int, float, np.floating)) else float(getattr(err, "avg_error", np.nan))
                 if not np.isfinite(score_val):
                     continue
@@ -660,7 +637,6 @@ class DataProcessor:
             except Exception:
                 continue
 
-        # restore
         self.osb.data = data0
         self.osb.meta_valid = mv0
         self.osb.filled = filled0
@@ -730,7 +706,6 @@ class DataProcessor:
             df_out = osb.data.copy()
             print("No filled data found; exporting raw dataset instead.")
 
-        # --- Setup filename ---
         if os.path.isdir(path):
             base = os.path.join(path, "processed_data")
         else:
@@ -741,7 +716,6 @@ class DataProcessor:
         outfile_zip = base + ".zip"
         os.makedirs(os.path.dirname(outfile_zip), exist_ok=True)
 
-        # --- Helper functions for in-memory export ---
         def df_to_bytes(df, fmt: str):
             fmt = fmt.lower()
             bio = io.BytesIO()
@@ -763,13 +737,10 @@ class DataProcessor:
         def to_bytes_toml(obj):
             return toml.dumps(obj).encode("utf-8")
 
-        # --- Collect all files to write ---
         buffer_dict = {}
 
-        # Main data
         buffer_dict[f"filled_data.{data_format}"] = df_to_bytes(df_out, data_format)
 
-        # Metadata
         if include_meta:
             buffer_dict[f"meta_valid.{meta_format}"] = df_to_bytes(osb.meta_valid, meta_format)
             buffer_dict[f"meta_filled.{meta_format}"] = df_to_bytes(osb.meta_filled, meta_format)
@@ -777,7 +748,6 @@ class DataProcessor:
         if include_original:
             buffer_dict[f"original_data.{data_format}"] = df_to_bytes(osb.data, data_format)
 
-        # --- Summary statistics ---
         if include_summary:
             summary_rows = []
             for col in df_out.columns:
@@ -808,7 +778,6 @@ class DataProcessor:
             else:
                 buffer_dict[f"summary.{summary_format}"] = df_to_bytes(summary_df, summary_format)
 
-        # --- Pipeline info ---
         if include_pipeline_meta and hasattr(self, "pipeline") and self.pipeline:
             pipeline_records = [
                 {
@@ -827,7 +796,6 @@ class DataProcessor:
                 pipeline_df = pd.DataFrame(pipeline_records)
                 buffer_dict[f"pipeline.{pipeline_meta_format}"] = df_to_bytes(pipeline_df, pipeline_meta_format)
 
-        # --- Write everything to ZIP ---
         if compress:
             with zipfile.ZipFile(outfile_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
                 for name, content in buffer_dict.items():
@@ -835,7 +803,6 @@ class DataProcessor:
             print(f"Export complete: {outfile_zip}")
             return outfile_zip
         else:
-            # export only main data (uncompressed)
             main_file = base + f".{data_format}"
             with open(main_file, "wb") as f:
                 f.write(buffer_dict[f"filled_data.{data_format}"])
