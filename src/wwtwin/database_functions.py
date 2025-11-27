@@ -19,12 +19,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
 
-import sys
 import os
 from os import listdir
 import pandas as pd
-import numpy as np
-import sqlite3
 from sqlite3 import Error
 from sqlalchemy import create_engine
 from sqlalchemy import text

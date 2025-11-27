@@ -1,0 +1,1371 @@
+<!DOCTYPE html>
+
+<html lang="English" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>wwtwin.database &#8212; wwtwin 0.1.0 documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="../../_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css?v=27fed22d" />
+    <script src="../../_static/documentation_options.js?v=76184ce0"></script>
+    <script src="../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for wwtwin.database</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Class DataBase provides functionalities for creating local sqlite database</span>
+<span class="sd">from a raw (waste)water data source.</span>
+
+<span class="sd">Copyright (C) 2025  Saba Daneshgar, BIOMATH, Ghent University</span>
+
+<span class="sd">This program is free software: you can redistribute it and/or modify</span>
+<span class="sd">it under the terms of the GNU General Public License as published by</span>
+<span class="sd">the Free Software Foundation, either version 3 of the License, or</span>
+<span class="sd">(at your option) any later version.</span>
+
+<span class="sd">This program is distributed in the hope that it will be useful,</span>
+<span class="sd">but WITHOUT ANY WARRANTY; without even the implied warranty of</span>
+<span class="sd">MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</span>
+<span class="sd">GNU General Public License for more details.</span>
+
+<span class="sd">You should have received a copy of the GNU General Public License</span>
+<span class="sd">along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;.</span>
+
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.database_functions</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_database_connection</span><span class="p">,</span> <span class="n">create_dataframe</span><span class="p">,</span> <span class="n">read_files</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">dateutil</span><span class="w"> </span><span class="kn">import</span> <span class="n">parser</span> <span class="k">as</span> <span class="n">dtparser</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">io</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">enum</span><span class="w"> </span><span class="kn">import</span> <span class="n">Enum</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">Tuple</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_engine</span><span class="p">,</span> <span class="n">text</span><span class="p">,</span> <span class="n">inspect</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy.engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">Engine</span><span class="p">,</span> <span class="n">Connection</span>
+
+<span class="c1"># logger = logging.getLogger(__name__)</span>
+
+<span class="n">IfExists</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;fail&quot;</span><span class="p">,</span> <span class="s2">&quot;replace&quot;</span><span class="p">,</span> <span class="s2">&quot;append&quot;</span><span class="p">]</span>
+<span class="n">Conn</span> <span class="o">=</span> <span class="n">Union</span><span class="p">[</span><span class="n">Engine</span><span class="p">,</span> <span class="n">Connection</span><span class="p">]</span>
+<span class="n">SimulationMode</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;real-time&quot;</span><span class="p">,</span> <span class="s2">&quot;historical&quot;</span><span class="p">]</span>
+<span class="n">AggName</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;mean&quot;</span><span class="p">,</span> <span class="s2">&quot;sum&quot;</span><span class="p">,</span> <span class="s2">&quot;min&quot;</span><span class="p">,</span> <span class="s2">&quot;max&quot;</span><span class="p">,</span> <span class="s2">&quot;median&quot;</span><span class="p">,</span> <span class="s2">&quot;first&quot;</span><span class="p">,</span> <span class="s2">&quot;last&quot;</span><span class="p">]</span>
+<span class="n">FillName</span> <span class="o">=</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;ffill&quot;</span><span class="p">,</span> <span class="s2">&quot;bfill&quot;</span><span class="p">,</span> <span class="s2">&quot;interpolate&quot;</span><span class="p">]</span>
+
+
+<div class="viewcode-block" id="DataSourceType">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataSourceType">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DataSourceType</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+    <span class="n">FILE</span> <span class="o">=</span> <span class="s2">&quot;file&quot;</span>
+    <span class="n">DATABASE</span> <span class="o">=</span> <span class="s2">&quot;database&quot;</span></div>
+
+
+
+
+
+<div class="viewcode-block" id="FileType">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.FileType">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">FileType</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+    <span class="n">EXCEL</span> <span class="o">=</span> <span class="s2">&quot;excel&quot;</span>
+    <span class="n">TEXT</span> <span class="o">=</span> <span class="s2">&quot;text&quot;</span>
+    <span class="n">CSV</span> <span class="o">=</span> <span class="s2">&quot;csv&quot;</span>
+    <span class="n">PARQUET</span> <span class="o">=</span> <span class="s2">&quot;parquet&quot;</span>
+    <span class="n">FEATHER</span> <span class="o">=</span> <span class="s2">&quot;feather&quot;</span></div>
+
+
+
+
+
+<div class="viewcode-block" id="DatabaseType">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DatabaseType">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DatabaseType</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+    <span class="n">MYSQL</span> <span class="o">=</span> <span class="s2">&quot;mysql&quot;</span>
+    <span class="n">POSTGRES</span> <span class="o">=</span> <span class="s2">&quot;postgres&quot;</span>
+    <span class="n">SQLITE</span> <span class="o">=</span> <span class="s2">&quot;sqlite&quot;</span>
+    <span class="n">HISTORIAN</span> <span class="o">=</span> <span class="s2">&quot;historian&quot;</span>
+    <span class="n">MSSQL</span> <span class="o">=</span> <span class="s2">&quot;mssql&quot;</span></div>
+
+
+
+
+
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">slots</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">_ValidatedPaths</span><span class="p">:</span>
+    <span class="n">raw_data_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Path</span><span class="p">]</span>
+    <span class="n">local_db_dir</span><span class="p">:</span> <span class="n">Path</span>
+    <span class="n">local_db_path</span><span class="p">:</span> <span class="n">Path</span> <span class="c1"># full path *without* suffix</span>
+
+
+
+
+<div class="viewcode-block" id="ExtractOptions">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.ExtractOptions">[docs]</a>
+<span class="nd">@dataclass</span><span class="p">(</span><span class="n">slots</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ExtractOptions</span><span class="p">:</span>
+    <span class="n">table_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">time_column_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">variable_column_names</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">select_all</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">starttime</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">endtime</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">filter_tagnames_column</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">filter_tagnames</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">filter_eq</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">filter_gt</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">filter_lt</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">filter_geq</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">filter_leq</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">target_table</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;_raw_data&quot;</span> <span class="c1"># local table name</span></div>
+
+
+
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_as_list</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]])</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]:</span>
+    <span class="k">if</span> <span class="n">x</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">x</span><span class="p">]</span>
+    <span class="k">return</span> <span class="nb">list</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+
+
+
+
+<div class="viewcode-block" id="DataBase">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">DataBase</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    data_source : str</span>
+<span class="sd">        define the source of the data, options: &quot;file&quot; and &quot;database&quot;</span>
+<span class="sd">    path_to_data_source : str</span>
+<span class="sd">        path to the directory that contains the raw data file/s</span>
+<span class="sd">    path_to_local_db : str</span>
+<span class="sd">        path to the directory for storing the local database</span>
+<span class="sd">    local_database_name : str</span>
+<span class="sd">        name of the local database to be stored</span>
+<span class="sd">    file_names : list</span>
+<span class="sd">        list of files to be joined, must have the same extension</span>
+<span class="sd">    file_type : str</span>
+<span class="sd">        extension of the files to read, options: excel, text, csv</span>
+<span class="sd">    sep : str</span>
+<span class="sd">        the separating element necessary for reading text/csv files e.g. \t</span>
+<span class="sd">    encoding : str</span>
+<span class="sd">        encoding used for the data files</span>
+<span class="sd">    database_type : str</span>
+<span class="sd">        type of the database storing the source raw data, possible options: &quot;mysql&quot;, &quot;postgres&quot;, &quot;sqlite&quot;, &quot;historian&quot; and &quot;mssql&quot;</span>
+<span class="sd">    database_name : str</span>
+<span class="sd">        name of the database storing the source raw data</span>
+<span class="sd">    server : str</span>
+<span class="sd">        server name for connecting to the database storing the source raw data, &quot;localhost&quot; will be passed if not specified</span>
+<span class="sd">    user : str</span>
+<span class="sd">        username for connecting to the source database</span>
+<span class="sd">    password : str</span>
+<span class="sd">        password for connecting to the source database</span>
+<span class="sd">    port : int</span>
+<span class="sd">        port for connecting to the source database</span>
+<span class="sd">    driver : str</span>
+<span class="sd">        driver for connecting to the source database, if not specified, default ODBC values will be passed based on the type of database</span>
+<span class="sd">    table_name : str</span>
+<span class="sd">        name of the table in the source database to query data from</span>
+<span class="sd">    time_column_name : str</span>
+<span class="sd">        name of the column in the database table containing the time data</span>
+<span class="sd">    variable_column_names : str or list</span>
+<span class="sd">        name or list of names for the columns containing time series of the data to be queried from the database</span>
+<span class="sd">    select_all : bool</span>
+<span class="sd">        indicate whether all columns should be queried from the database table or not, default is True</span>
+<span class="sd">    starttime : str</span>
+<span class="sd">        start time for filtering the query command</span>
+<span class="sd">    endtime : str</span>
+<span class="sd">        end time for filtering the query command</span>
+<span class="sd">    filter_tagnames_column : str</span>
+<span class="sd">        name of the column to be filtered in the query command</span>
+<span class="sd">    filter_eq : str, int, float or list</span>
+<span class="sd">        &quot;equals to&quot; filter. value or a list of values to be used for filtering the columns in the query command</span>
+<span class="sd">    linked_server_name : str</span>
+<span class="sd">        name of the linked server to be created on a Microsoft SQL Server for connecting to the historian, only used for database type of &quot;historian&quot;</span>
+<span class="sd">    linked_server_provider : str</span>
+<span class="sd">        name of the linked server provider to be created on a Microsoft SQL Server for connecting to the historian, only used for database type of &quot;historian&quot;</span>
+<span class="sd">    linked_server_datasource : str</span>
+<span class="sd">        name of the linked server data source to be created on a Microsoft SQL Server for connecting to the historian, only used for database type of &quot;historian&quot;</span>
+<span class="sd">    </span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># --- Public attributes (typed) ---</span>
+    <span class="n">data_source</span><span class="p">:</span> <span class="n">DataSourceType</span>
+    <span class="n">path_to_data_source</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Path</span><span class="p">]</span>
+    <span class="n">path_to_local_db</span><span class="p">:</span> <span class="n">Path</span>
+    <span class="n">local_database_name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">file_names</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span>
+    <span class="n">file_type</span><span class="p">:</span> <span class="n">FileType</span>
+    <span class="n">sep</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">encoding</span><span class="p">:</span> <span class="nb">str</span>
+
+
+    <span class="n">database_type</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">DatabaseType</span><span class="p">]</span>
+    <span class="n">database_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+
+
+    <span class="n">server</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">user</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">password</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">port</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
+    <span class="n">driver</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+
+
+    <span class="n">linked_server_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">linked_server_provider</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">linked_server_datasource</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+
+
+    <span class="c1"># Computed</span>
+    <span class="n">is_historian</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">engine</span><span class="p">:</span> <span class="n">Engine</span> <span class="c1"># SQLAlchemy engine for the *local* SQLite DB</span>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>
+        <span class="n">data_source</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">DataSourceType</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">DataSourceType</span><span class="o">.</span><span class="n">FILE</span><span class="p">,</span>
+        <span class="n">path_to_data_source</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">path_to_local_db</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">local_database_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">file_names</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">file_type</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">FileType</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">FileType</span><span class="o">.</span><span class="n">TEXT</span><span class="p">,</span>
+        <span class="n">sep</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="p">,</span>
+        <span class="n">encoding</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;iso-8859-1&quot;</span><span class="p">,</span>
+        <span class="n">database_type</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">DatabaseType</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">database_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">server</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">user</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">password</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">port</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">driver</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="c1"># table/time/filter args intentionally omitted for now (commented in your code)</span>
+        <span class="n">linked_server_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">linked_server_provider</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">linked_server_datasource</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">overwrite</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        initialisation of a DataBase object from a source of raw data.</span>
+<span class="sd">        create a local database based on the raw data from either file(s) or a database source.</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">data_source</span> <span class="o">=</span> <span class="n">DataSourceType</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">data_source</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">file_type</span><span class="p">,</span> <span class="n">FileType</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">file_type</span> <span class="o">=</span> <span class="n">file_type</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">file_type</span> <span class="o">=</span> <span class="n">FileType</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">file_type</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">())</span>
+
+
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">database_type</span> <span class="o">=</span> <span class="n">DatabaseType</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">database_type</span><span class="p">))</span> <span class="k">if</span> <span class="n">database_type</span> <span class="k">else</span> <span class="kc">None</span>
+
+
+        <span class="c1"># Assign simple attributes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">file_names</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">file_names</span><span class="p">)</span> <span class="k">if</span> <span class="n">file_names</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sep</span> <span class="o">=</span> <span class="n">sep</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">encoding</span> <span class="o">=</span> <span class="n">encoding</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">database_name</span> <span class="o">=</span> <span class="n">database_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">server</span> <span class="o">=</span> <span class="n">server</span> <span class="ow">or</span> <span class="s2">&quot;localhost&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">user</span> <span class="o">=</span> <span class="n">user</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">password</span> <span class="o">=</span> <span class="n">password</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">port</span> <span class="o">=</span> <span class="n">port</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">driver</span> <span class="o">=</span> <span class="n">driver</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">linked_server_name</span> <span class="o">=</span> <span class="n">linked_server_name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">linked_server_provider</span> <span class="o">=</span> <span class="n">linked_server_provider</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">linked_server_datasource</span> <span class="o">=</span> <span class="n">linked_server_datasource</span>
+
+
+        <span class="c1"># Validate and prepare paths</span>
+        <span class="n">vp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validate_and_prepare_paths</span><span class="p">(</span><span class="n">path_to_data_source</span><span class="p">,</span> <span class="n">path_to_local_db</span><span class="p">,</span> <span class="n">local_database_name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">path_to_data_source</span> <span class="o">=</span> <span class="n">vp</span><span class="o">.</span><span class="n">raw_data_path</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">path_to_local_db</span> <span class="o">=</span> <span class="n">vp</span><span class="o">.</span><span class="n">local_db_dir</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">local_database_name</span> <span class="o">=</span> <span class="n">vp</span><span class="o">.</span><span class="n">local_db_path</span><span class="o">.</span><span class="n">name</span>
+
+
+        <span class="c1"># Validate source-specific requirements</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_source_requirements</span><span class="p">()</span>
+
+
+        <span class="c1"># Historian flag</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">is_historian</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">database_type</span> <span class="o">==</span> <span class="n">DatabaseType</span><span class="o">.</span><span class="n">HISTORIAN</span>
+
+
+        <span class="c1"># Create or reuse local SQLite DB file</span>
+        <span class="n">db_file</span> <span class="o">=</span> <span class="p">(</span><span class="n">vp</span><span class="o">.</span><span class="n">local_db_path</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s2">&quot;.db&quot;</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">db_file</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">overwrite</span><span class="p">:</span>
+                <span class="n">db_file</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
+            <span class="c1"># else: keep existing DB</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Ensure directory exists</span>
+            <span class="n">db_file</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="c1"># Touch to ensure a file exists (SQLAlchemy will also create as needed)</span>
+            <span class="n">db_file</span><span class="o">.</span><span class="n">touch</span><span class="p">()</span>
+
+
+        <span class="c1"># Create SQLAlchemy engine for local SQLite</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">engine</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_create_local_sqlite_engine</span><span class="p">(</span><span class="n">db_file</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_setup_logger</span><span class="p">()</span>
+        
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_setup_logger</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Configure both in-memory and file logging.&quot;&quot;&quot;</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="s2">&quot;logs&quot;</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">log_file</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">&quot;logs&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;database.log&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Create a StringIO stream for in-memory logging</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_log_stream</span> <span class="o">=</span> <span class="n">io</span><span class="o">.</span><span class="n">StringIO</span><span class="p">()</span>
+
+        <span class="c1"># Create and configure logger</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;database&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">)</span>
+
+        <span class="c1"># Remove existing handlers (prevents duplicates in interactive runs)</span>
+        <span class="k">for</span> <span class="n">h</span> <span class="ow">in</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">handlers</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">removeHandler</span><span class="p">(</span><span class="n">h</span><span class="p">)</span>
+
+        <span class="c1"># Console handler</span>
+        <span class="n">console_handler</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">StreamHandler</span><span class="p">()</span>
+        <span class="n">console_handler</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s2">&quot;[</span><span class="si">%(asctime)s</span><span class="s2">] </span><span class="si">%(levelname)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">console_handler</span><span class="p">)</span>
+
+        <span class="c1"># File handler</span>
+        <span class="n">file_handler</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">FileHandler</span><span class="p">(</span><span class="n">log_file</span><span class="p">)</span>
+        <span class="n">file_handler</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s2">&quot;[</span><span class="si">%(asctime)s</span><span class="s2">] </span><span class="si">%(levelname)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">file_handler</span><span class="p">)</span>
+
+        <span class="c1"># In-memory handler</span>
+        <span class="n">memory_handler</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">StreamHandler</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_log_stream</span><span class="p">)</span>
+        <span class="n">memory_handler</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span><span class="s2">&quot;[</span><span class="si">%(asctime)s</span><span class="s2">] </span><span class="si">%(levelname)s</span><span class="s2">: </span><span class="si">%(message)s</span><span class="s2">&quot;</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">memory_handler</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Logger initialized for database&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="DataBase.get_logs">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase.get_logs">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_logs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">as_text</span><span class="o">=</span><span class="kc">False</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return all logged messages from memory.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_log_stream</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">logs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_log_stream</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">logs</span> <span class="k">if</span> <span class="n">as_text</span> <span class="k">else</span> <span class="n">logs</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span></div>
+
+
+<div class="viewcode-block" id="DataBase.save_logs">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase.save_logs">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save_logs</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Save logs from memory to a text file.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">path</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="s2">&quot;logs&quot;</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="s2">&quot;logs&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;database_session.log&quot;</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">get_logs</span><span class="p">(</span><span class="n">as_text</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Logs saved to </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">path</span></div>
+
+     
+                
+    <span class="c1"># --- Helpers ---</span>
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_and_prepare_paths</span><span class="p">(</span>
+        <span class="n">path_to_data_source</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">]],</span>
+        <span class="n">path_to_local_db</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">PathLike</span><span class="p">]],</span>
+        <span class="n">local_database_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">_ValidatedPaths</span><span class="p">:</span>
+        <span class="n">raw_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">path_to_data_source</span><span class="p">)</span> <span class="k">if</span> <span class="n">path_to_data_source</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">raw_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">raw_path</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;path_to_data_source does not exist: </span><span class="si">{</span><span class="n">raw_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+
+        <span class="c1"># Default local DB dir to HOME</span>
+        <span class="n">local_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">path_to_local_db</span><span class="p">)</span> <span class="k">if</span> <span class="n">path_to_local_db</span> <span class="k">else</span> <span class="n">Path</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;HOME&quot;</span><span class="p">,</span> <span class="s2">&quot;.&quot;</span><span class="p">))</span>
+        <span class="n">local_dir</span> <span class="o">=</span> <span class="n">local_dir</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">local_dir</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+            <span class="n">local_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+
+        <span class="n">db_name</span> <span class="o">=</span> <span class="p">(</span><span class="n">local_database_name</span> <span class="ow">or</span> <span class="s2">&quot;local_database&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">db_name</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;local_database_name must be a non-empty string&quot;</span><span class="p">)</span>
+
+
+        <span class="c1"># Store path without suffix; we will append .db later</span>
+        <span class="n">local_db_path</span> <span class="o">=</span> <span class="p">(</span><span class="n">local_dir</span> <span class="o">/</span> <span class="n">db_name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">_ValidatedPaths</span><span class="p">(</span><span class="n">raw_data_path</span><span class="o">=</span><span class="n">raw_path</span><span class="p">,</span> <span class="n">local_db_dir</span><span class="o">=</span><span class="n">local_dir</span><span class="p">,</span> <span class="n">local_db_path</span><span class="o">=</span><span class="n">local_db_path</span><span class="p">)</span>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_source_requirements</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">data_source</span> <span class="o">==</span> <span class="n">DataSourceType</span><span class="o">.</span><span class="n">DATABASE</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">database_type</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">database_name</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;For data_source=&#39;database&#39;, &#39;database_type&#39; and &#39;database_name&#39; must be provided&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">data_source</span> <span class="o">==</span> <span class="n">DataSourceType</span><span class="o">.</span><span class="n">FILE</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">path_to_data_source</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">file_names</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;For data_source=&#39;file&#39;, &#39;path_to_data_source&#39; and &#39;file_names&#39; must be provided&quot;</span><span class="p">)</span>
+        <span class="c1"># Optional: check that the files exist (same extension assumed)</span>
+            <span class="n">missing</span> <span class="o">=</span> <span class="p">[</span><span class="n">fn</span> <span class="k">for</span> <span class="n">fn</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">file_names</span> <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path_to_data_source</span> <span class="o">/</span> <span class="n">fn</span><span class="p">)</span><span class="o">.</span><span class="n">exists</span><span class="p">()]</span>
+            <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;The following files were not found: </span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;data_source must be &#39;file&#39; or &#39;database&#39;&quot;</span><span class="p">)</span>
+                
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_create_local_sqlite_engine</span><span class="p">(</span><span class="n">db_file</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Engine</span><span class="p">:</span>
+        <span class="c1"># Proper SQLAlchemy SQLite URL</span>
+        <span class="n">url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;sqlite+pysqlite:///</span><span class="si">{</span><span class="n">db_file</span><span class="o">.</span><span class="n">as_posix</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">return</span> <span class="n">create_engine</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">future</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+
+    <span class="c1"># --- Convenience properties ---</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">local_db_file</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path_to_local_db</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">local_database_name</span><span class="si">}</span><span class="s2">.db&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span>    
+        
+        
+<div class="viewcode-block" id="DataBase.extract_data_from_source">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase.extract_data_from_source">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">extract_data_from_source</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">table_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">time_column_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">variable_column_names</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">select_all</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">starttime</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">endtime</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timestamp</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">filter_tagnames_column</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">filter_tagnames</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">filter_eq</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">filter_gt</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">filter_lt</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">filter_geq</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">filter_leq</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">target_table</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;raw_data&quot;</span><span class="p">,</span>
+        <span class="n">if_exists</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;replace&quot;</span><span class="p">,</span> <span class="c1"># or &quot;append&quot;</span>
+        <span class="n">chunksize</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Extract data from the configured *source* (files or RDBMS) and load it</span>
+<span class="sd">        into the local SQLite database table `target_table`.</span>
+
+
+<span class="sd">        Returns number of rows loaded.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">opts</span> <span class="o">=</span> <span class="n">ExtractOptions</span><span class="p">(</span>
+        <span class="n">table_name</span><span class="o">=</span><span class="n">table_name</span><span class="p">,</span>
+        <span class="n">time_column_name</span><span class="o">=</span><span class="n">time_column_name</span><span class="p">,</span>
+        <span class="n">variable_column_names</span><span class="o">=</span><span class="n">variable_column_names</span><span class="p">,</span>
+        <span class="n">select_all</span><span class="o">=</span><span class="n">select_all</span><span class="p">,</span>
+        <span class="n">starttime</span><span class="o">=</span><span class="n">starttime</span><span class="p">,</span>
+        <span class="n">endtime</span><span class="o">=</span><span class="n">endtime</span><span class="p">,</span>
+        <span class="n">filter_tagnames_column</span><span class="o">=</span><span class="n">filter_tagnames_column</span><span class="p">,</span>
+        <span class="n">filter_tagnames</span><span class="o">=</span><span class="n">filter_tagnames</span><span class="p">,</span>
+        <span class="n">filter_eq</span><span class="o">=</span><span class="n">filter_eq</span><span class="p">,</span>
+        <span class="n">filter_gt</span><span class="o">=</span><span class="n">filter_gt</span><span class="p">,</span>
+        <span class="n">filter_lt</span><span class="o">=</span><span class="n">filter_lt</span><span class="p">,</span>
+        <span class="n">filter_geq</span><span class="o">=</span><span class="n">filter_geq</span><span class="p">,</span>
+        <span class="n">filter_leq</span><span class="o">=</span><span class="n">filter_leq</span><span class="p">,</span>
+        <span class="n">target_table</span><span class="o">=</span><span class="n">target_table</span><span class="p">,</span>
+        <span class="p">)</span>   
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">data_source</span> <span class="o">==</span> <span class="n">DataSourceType</span><span class="o">.</span><span class="n">FILE</span><span class="p">:</span>
+            <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_from_file</span><span class="p">()</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">data_source</span> <span class="o">==</span> <span class="n">DataSourceType</span><span class="o">.</span><span class="n">DATABASE</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">opts</span><span class="o">.</span><span class="n">table_name</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;table_name must be provided for data_source=&#39;database&#39;&quot;</span><span class="p">)</span>
+            <span class="n">df</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_read_from_database</span><span class="p">(</span><span class="n">opts</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Unsupported data_source&quot;</span><span class="p">)</span>
+
+
+        <span class="c1"># Auto-detect time column if not provided</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">opts</span><span class="o">.</span><span class="n">time_column_name</span><span class="p">:</span>
+            <span class="n">detected</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_check_time_column</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">detected</span><span class="p">:</span>
+                <span class="n">opts</span><span class="o">.</span><span class="n">time_column_name</span> <span class="o">=</span> <span class="n">detected</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Detected time column: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">detected</span><span class="p">)</span>
+
+
+        <span class="k">if</span> <span class="n">df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;No data returned from source.&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">if_exists</span> <span class="o">==</span> <span class="s2">&quot;replace&quot;</span><span class="p">:</span>
+                <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">()</span><span class="o">.</span><span class="n">to_sql</span><span class="p">(</span><span class="n">opts</span><span class="o">.</span><span class="n">target_table</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="p">,</span> <span class="n">if_exists</span><span class="o">=</span><span class="s2">&quot;replace&quot;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">return</span> <span class="mi">0</span>
+
+
+        <span class="c1"># Standardize time dtype if we have a candidate</span>
+        <span class="k">if</span> <span class="n">opts</span><span class="o">.</span><span class="n">time_column_name</span> <span class="ow">and</span> <span class="n">opts</span><span class="o">.</span><span class="n">time_column_name</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">df</span><span class="p">[</span><span class="n">opts</span><span class="o">.</span><span class="n">time_column_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">opts</span><span class="o">.</span><span class="n">time_column_name</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;coerce&quot;</span><span class="p">)</span>
+
+
+        <span class="n">n</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="n">df</span><span class="o">.</span><span class="n">to_sql</span><span class="p">(</span><span class="n">opts</span><span class="o">.</span><span class="n">target_table</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="p">,</span> <span class="n">if_exists</span><span class="o">=</span><span class="n">if_exists</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">chunksize</span><span class="o">=</span><span class="n">chunksize</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Loaded </span><span class="si">%d</span><span class="s2"> rows into local table &#39;</span><span class="si">%s</span><span class="s2">&#39;&quot;</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">opts</span><span class="o">.</span><span class="n">target_table</span><span class="p">)</span>
+        
+        <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="n">opts</span><span class="o">.</span><span class="n">time_column_name</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_raw_data</span> <span class="o">=</span> <span class="n">df</span>
+
+        <span class="k">return</span> <span class="n">n</span></div>
+
+        
+    
+    
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_read_from_file</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">path_to_data_source</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">file_names</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;path_to_data_source and file_names must be set for file source&quot;</span><span class="p">)</span>
+
+
+        
+        <span class="n">df</span> <span class="o">=</span> <span class="n">read_files</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">path_to_data_source</span><span class="p">,</span>
+            <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">file_names</span><span class="p">),</span>
+            <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">file_type</span><span class="o">.</span><span class="n">value</span> <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">file_type</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">file_type</span><span class="p">),</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sep</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">encoding</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;read_files must return a pandas.DataFrame&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Read </span><span class="si">%d</span><span class="s2"> rows via legacy read_files()&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">df</span>
+
+
+        
+
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">_read_from_database</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">opts</span><span class="p">:</span> <span class="n">ExtractOptions</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+        <span class="n">conn_source</span> <span class="o">=</span> <span class="n">create_database_connection</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">database_type</span><span class="o">.</span><span class="n">value</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">database_type</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">database_name</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">path_to_data_source</span><span class="p">,</span> <span class="c1"># aligns with your original _raw_data_path</span>
+            <span class="n">server</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">server</span><span class="p">,</span>
+            <span class="n">user</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">user</span><span class="p">,</span>
+            <span class="n">password</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">password</span><span class="p">,</span>
+            <span class="n">port</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">port</span><span class="p">,</span>
+            <span class="n">driver</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">driver</span><span class="p">,</span>
+            <span class="n">linked_server_name</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">linked_server_name</span><span class="p">,</span>
+            <span class="n">linked_server_provider</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">linked_server_provider</span><span class="p">,</span>
+            <span class="n">linked_server_datasource</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">linked_server_datasource</span><span class="p">,</span>
+            <span class="p">)</span>
+        
+        <span class="n">df</span> <span class="o">=</span> <span class="n">create_dataframe</span><span class="p">(</span>
+            <span class="n">conn_source</span><span class="p">,</span>
+            <span class="n">opts</span><span class="o">.</span><span class="n">table_name</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">is_historian</span><span class="p">,</span>
+            <span class="n">opts</span><span class="o">.</span><span class="n">time_column_name</span><span class="p">,</span>
+            <span class="n">opts</span><span class="o">.</span><span class="n">variable_column_names</span><span class="p">,</span>
+            <span class="n">opts</span><span class="o">.</span><span class="n">select_all</span><span class="p">,</span>
+            <span class="n">opts</span><span class="o">.</span><span class="n">starttime</span><span class="p">,</span>
+            <span class="n">opts</span><span class="o">.</span><span class="n">endtime</span><span class="p">,</span>
+            <span class="n">opts</span><span class="o">.</span><span class="n">filter_tagnames_column</span><span class="p">,</span>
+            <span class="n">opts</span><span class="o">.</span><span class="n">filter_eq</span><span class="p">,</span>
+            <span class="n">opts</span><span class="o">.</span><span class="n">filter_tagnames</span><span class="p">,</span>
+            <span class="n">opts</span><span class="o">.</span><span class="n">filter_gt</span><span class="p">,</span>
+            <span class="n">opts</span><span class="o">.</span><span class="n">filter_lt</span><span class="p">,</span>
+            <span class="n">opts</span><span class="o">.</span><span class="n">filter_geq</span><span class="p">,</span>
+            <span class="n">opts</span><span class="o">.</span><span class="n">filter_leq</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">df</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;create_dataframe must return a pandas.DataFrame&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Read </span><span class="si">%d</span><span class="s2"> rows via legacy create_dataframe()&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">df</span>
+    
+    
+    
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_check_time_column</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">min_parse_ratio</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.8</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the name of a likely time column or None.</span>
+
+
+<span class="sd">        Tries: object columns, then numeric epoch-like columns (s/ms/ns).</span>
+<span class="sd">        Accepts column if &gt;= `min_parse_ratio` of non-null values parse to datetime.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">candidates</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span>
+        <span class="c1"># 1) object-like string timestamps</span>
+        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="s2">&quot;object&quot;</span><span class="p">:</span>
+                <span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;coerce&quot;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s2">&quot;mixed&quot;</span><span class="p">)</span>
+                <span class="n">non_null</span> <span class="o">=</span> <span class="n">s</span><span class="o">.</span><span class="n">notna</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+                <span class="n">total</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">notna</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+                <span class="k">if</span> <span class="n">total</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="p">(</span><span class="n">non_null</span> <span class="o">/</span> <span class="n">total</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">min_parse_ratio</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">col</span>
+        <span class="c1"># 2) numeric epochs</span>
+        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">candidates</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">pd</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">types</span><span class="o">.</span><span class="n">is_integer_dtype</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">])</span> <span class="ow">or</span> <span class="n">pd</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">types</span><span class="o">.</span><span class="n">is_float_dtype</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">]):</span>
+                <span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;coerce&quot;</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;s&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">notna</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span> <span class="o">&gt;=</span> <span class="n">min_parse_ratio</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">col</span>
+                <span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;coerce&quot;</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;ms&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">notna</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span> <span class="o">&gt;=</span> <span class="n">min_parse_ratio</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">col</span>
+                <span class="n">s</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">df</span><span class="p">[</span><span class="n">col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;coerce&quot;</span><span class="p">,</span> <span class="n">unit</span><span class="o">=</span><span class="s2">&quot;ns&quot;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">notna</span><span class="p">()</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span> <span class="o">&gt;=</span> <span class="n">min_parse_ratio</span><span class="p">:</span>
+                    <span class="k">return</span> <span class="n">col</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+
+    
+<div class="viewcode-block" id="DataBase.write_to_db">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase.write_to_db">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_to_db</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+        <span class="n">table_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">method</span><span class="p">:</span> <span class="n">IfExists</span> <span class="o">=</span> <span class="s2">&quot;replace&quot;</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">index</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">index_label</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">chunksize</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="s2">&quot;sqlalchemy.types.TypeEngine&quot;</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Write a DataFrame to a table in the *local* SQLite (self.engine).</span>
+
+<span class="sd">        Returns the number of rows written.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">begin</span><span class="p">()</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">to_sql</span><span class="p">(</span>
+                <span class="n">name</span><span class="o">=</span><span class="n">table_name</span><span class="p">,</span>
+                <span class="n">con</span><span class="o">=</span><span class="n">conn</span><span class="p">,</span>
+                <span class="n">if_exists</span><span class="o">=</span><span class="n">method</span><span class="p">,</span>
+                <span class="n">index</span><span class="o">=</span><span class="n">index</span><span class="p">,</span>
+                <span class="n">index_label</span><span class="o">=</span><span class="n">index_label</span><span class="p">,</span>
+                <span class="n">chunksize</span><span class="o">=</span><span class="n">chunksize</span><span class="p">,</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">))</span></div>
+
+    
+<div class="viewcode-block" id="DataBase.query_from_db">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase.query_from_db">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">query_from_db</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">sql_command</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">params</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">index_column</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">date_column_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">chunksize</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Run a SELECT against the *local* SQLite and return a DataFrame.</span>
+
+<span class="sd">        Use `params` for safe parameter binding: WHERE ts BETWEEN :t0 AND :t1</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_sql_query</span><span class="p">(</span>
+                <span class="n">sql</span><span class="o">=</span><span class="n">text</span><span class="p">(</span><span class="n">sql_command</span><span class="p">),</span>
+                <span class="n">con</span><span class="o">=</span><span class="n">conn</span><span class="p">,</span>
+                <span class="n">params</span><span class="o">=</span><span class="n">params</span><span class="p">,</span>
+                <span class="n">index_col</span><span class="o">=</span><span class="n">index_column</span><span class="p">,</span>
+                <span class="n">parse_dates</span><span class="o">=</span><span class="n">date_column_name</span><span class="p">,</span>
+                <span class="n">chunksize</span><span class="o">=</span><span class="n">chunksize</span><span class="p">,</span>
+            <span class="p">)</span></div>
+
+        
+<div class="viewcode-block" id="DataBase.list_tables">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase.list_tables">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">list_tables</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;List tables in the local SQLite.&quot;&quot;&quot;</span>
+        <span class="n">insp</span> <span class="o">=</span> <span class="n">inspect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">insp</span><span class="o">.</span><span class="n">get_table_names</span><span class="p">()</span></div>
+
+    
+<div class="viewcode-block" id="DataBase.table_exists">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase.table_exists">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">table_exists</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">schema</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Check if a table exists in the local SQLite.&quot;&quot;&quot;</span>
+        <span class="n">insp</span> <span class="o">=</span> <span class="n">inspect</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">insp</span><span class="o">.</span><span class="n">has_table</span><span class="p">(</span><span class="n">table_name</span><span class="p">,</span> <span class="n">schema</span><span class="o">=</span><span class="n">schema</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="DataBase.head_table">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase.head_table">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">head_table</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the first n rows from a table.&quot;&quot;&quot;</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;SELECT * FROM </span><span class="si">{</span><span class="n">table_name</span><span class="si">}</span><span class="s2"> LIMIT </span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="n">n</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_sql_query</span><span class="p">(</span><span class="n">text</span><span class="p">(</span><span class="n">sql</span><span class="p">),</span> <span class="n">conn</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="DataBase.count_rows">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase.count_rows">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">count_rows</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return row count for a table.&quot;&quot;&quot;</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;SELECT COUNT(*) AS n FROM </span><span class="si">{</span><span class="n">table_name</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">read_sql_query</span><span class="p">(</span><span class="n">text</span><span class="p">(</span><span class="n">sql</span><span class="p">),</span> <span class="n">conn</span><span class="p">)[</span><span class="s2">&quot;n&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">iat</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span></div>
+
+        
+<div class="viewcode-block" id="DataBase.ensure_index">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase.ensure_index">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ensure_index</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">table</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">index_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">columns</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="n">unique</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create an index on a table if it does not exist.&quot;&quot;&quot;</span>
+        <span class="n">cols</span> <span class="o">=</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">columns</span><span class="p">)</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;CREATE </span><span class="si">{</span><span class="s1">&#39;UNIQUE &#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">unique</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;&#39;</span><span class="si">}</span><span class="s2">INDEX IF NOT EXISTS </span><span class="si">{</span><span class="n">index_name</span><span class="si">}</span><span class="s2"> ON </span><span class="si">{</span><span class="n">table</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">cols</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">begin</span><span class="p">()</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">exec_driver_sql</span><span class="p">(</span><span class="n">sql</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="DataBase.delete_where">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase.delete_where">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">delete_where</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">table</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">where_sql</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">params</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Delete rows from a table with a WHERE clause.</span>
+
+<span class="sd">        Example: delete_where(&#39;_raw_data&#39;, &#39;ts &lt; :t&#39;, {&#39;t&#39;: &#39;2024-01-01&#39;})</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">sql</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;DELETE FROM </span><span class="si">{</span><span class="n">table</span><span class="si">}</span><span class="s2"> WHERE </span><span class="si">{</span><span class="n">where_sql</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">engine</span><span class="o">.</span><span class="n">begin</span><span class="p">()</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+            <span class="n">res</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">text</span><span class="p">(</span><span class="n">sql</span><span class="p">),</span> <span class="n">params</span> <span class="ow">or</span> <span class="p">{})</span>
+            <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">rowcount</span> <span class="ow">or</span> <span class="mi">0</span><span class="p">)</span></div>
+
+    
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">raw_data</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        returns a dataframe containing the raw data</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_raw_data&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_raw_data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_time_index</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_raw_data</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="s1">&#39;Database has no raw data!&#39;</span><span class="p">)</span>
+    
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">simulation_data</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        returns a dataframe containing the simulation data</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_simulation_data&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_simulation_data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_time_index</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_simulation_data</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="s1">&#39;Database has no simulation data!&#39;</span><span class="p">)</span>
+    
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resampled_data</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        returns a dataframe containing the resampled data</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_resampled_data&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_resampled_data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_time_index</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_resampled_data</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="s1">&#39;Database has no resampled data!&#39;</span><span class="p">)</span>
+    
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">formatted_data</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        returns a dataframe containing the formatted data</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_formatted_data&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_formatted_data</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_time_index</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_formatted_data</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="s1">&#39;Database has no formatted data!&#39;</span><span class="p">)</span>
+    
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">index_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        returns name of the time column</span>
+
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_raw_data</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">name</span>
+    
+
+    
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_ensure_dtindex</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">time_col</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Datetime&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Ensure a DatetimeIndex; if absent, try to build from `time_col`.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">df</span><span class="o">.</span><span class="n">sort_index</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">time_col</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">out</span><span class="p">[</span><span class="n">time_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="n">time_col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;raise&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">out</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="n">time_col</span><span class="p">,</span> <span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">sort_index</span><span class="p">()</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Data must have a DatetimeIndex or a time column (default &#39;ts&#39;).&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_rule_from_freq_unit</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">resampling_freq</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">resampling_unit</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">unit</span> <span class="o">=</span> <span class="n">resampling_unit</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">unit</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;minute&quot;</span><span class="p">,</span> <span class="s2">&quot;min&quot;</span><span class="p">):</span>
+            <span class="n">suffix</span> <span class="o">=</span> <span class="s2">&quot;T&quot;</span>             <span class="c1"># minutes</span>
+        <span class="k">elif</span> <span class="n">unit</span> <span class="o">==</span> <span class="s2">&quot;hour&quot;</span><span class="p">:</span>
+            <span class="n">suffix</span> <span class="o">=</span> <span class="s2">&quot;H&quot;</span>
+        <span class="k">elif</span> <span class="n">unit</span> <span class="o">==</span> <span class="s2">&quot;day&quot;</span><span class="p">:</span>
+            <span class="n">suffix</span> <span class="o">=</span> <span class="s2">&quot;D&quot;</span>
+        <span class="k">elif</span> <span class="n">unit</span> <span class="o">==</span> <span class="s2">&quot;week&quot;</span><span class="p">:</span>
+            <span class="n">suffix</span> <span class="o">=</span> <span class="s2">&quot;W&quot;</span>
+        <span class="k">elif</span> <span class="n">unit</span> <span class="o">==</span> <span class="s2">&quot;month&quot;</span><span class="p">:</span>
+            <span class="n">suffix</span> <span class="o">=</span> <span class="s2">&quot;M&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Invalid resampling unit. Use: minute/min, hour, day, week, month.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">int</span><span class="p">(</span><span class="n">resampling_freq</span><span class="p">)</span><span class="si">}{</span><span class="n">suffix</span><span class="si">}</span><span class="s2">&quot;</span>
+
+<div class="viewcode-block" id="DataBase.resample_data">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase.resample_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">resample_data</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+        <span class="n">resampling_freq</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">resampling_unit</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">rule</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>                       <span class="c1"># e.g. &quot;15min&quot;, &quot;1H&quot; (overrides freq+unit if given)</span>
+        <span class="n">how</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">AggName</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>                    <span class="c1"># aggregation name (None = asfreq)</span>
+        <span class="n">agg</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">AggName</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">AggName</span><span class="p">]]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>  <span class="c1"># per-column agg</span>
+        <span class="n">fill</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">FillName</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>                  <span class="c1"># ffill/bfill/interpolate after resample</span>
+        <span class="n">limit</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>                      <span class="c1"># max consecutive fill steps (for ffill/bfill)</span>
+        <span class="n">origin</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>                     <span class="c1"># pandas resample origin</span>
+        <span class="n">offset</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>                     <span class="c1"># &quot;30min&quot; alignment offset</span>
+        <span class="n">label</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="s2">&quot;right&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;left&quot;</span><span class="p">,</span>
+        <span class="n">closed</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;left&quot;</span><span class="p">,</span> <span class="s2">&quot;right&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;left&quot;</span><span class="p">,</span>
+        <span class="n">time_col</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Datetime&quot;</span><span class="p">,</span>
+        <span class="n">out_table</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;resampled_data&quot;</span><span class="p">,</span>
+        <span class="n">write_method</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;fail&quot;</span><span class="p">,</span> <span class="s2">&quot;replace&quot;</span><span class="p">,</span> <span class="s2">&quot;append&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;replace&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Resample a time-indexed DataFrame and persist the result to the local SQLite.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        (resampled_df, rows_written)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># 1) Build resampling rule</span>
+        <span class="k">if</span> <span class="n">rule</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">resampling_freq</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">resampling_unit</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Provide either `rule=&#39;15min&#39;` OR (`resampling_freq`, `resampling_unit`).&quot;</span><span class="p">)</span>
+            <span class="n">rule</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_rule_from_freq_unit</span><span class="p">(</span><span class="n">resampling_freq</span><span class="p">,</span> <span class="n">resampling_unit</span><span class="p">)</span>
+
+        <span class="c1"># 2) Ensure DatetimeIndex</span>
+        <span class="n">tsdf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_ensure_dtindex</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">time_col</span><span class="o">=</span><span class="n">time_col</span><span class="p">)</span>
+
+        <span class="c1"># 3) Perform resample</span>
+        <span class="k">if</span> <span class="n">how</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">agg</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># Pure calendar alignment without aggregation</span>
+            <span class="n">resampled</span> <span class="o">=</span> <span class="n">tsdf</span><span class="o">.</span><span class="n">asfreq</span><span class="p">(</span><span class="n">freq</span><span class="o">=</span><span class="n">rule</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">r</span> <span class="o">=</span> <span class="n">tsdf</span><span class="o">.</span><span class="n">resample</span><span class="p">(</span>
+                <span class="n">rule</span><span class="p">,</span>
+                <span class="n">origin</span><span class="o">=</span><span class="n">origin</span><span class="p">,</span>        <span class="c1"># None uses timestamp of first row</span>
+                <span class="n">offset</span><span class="o">=</span><span class="n">offset</span><span class="p">,</span>        <span class="c1"># allows shifting boundaries like &quot;30min&quot;</span>
+                <span class="n">label</span><span class="o">=</span><span class="n">label</span><span class="p">,</span>
+                <span class="n">closed</span><span class="o">=</span><span class="n">closed</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">agg</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">resampled</span> <span class="o">=</span> <span class="n">r</span><span class="o">.</span><span class="n">agg</span><span class="p">(</span><span class="n">agg</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="c1"># Single aggregation name over all numeric columns</span>
+                <span class="n">fn</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">pd</span><span class="o">.</span><span class="n">core</span><span class="o">.</span><span class="n">resample</span><span class="o">.</span><span class="n">Resampler</span><span class="p">,</span> <span class="n">how</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>  <span class="c1"># type: ignore[attr-defined]</span>
+                <span class="k">if</span> <span class="n">how</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;mean&quot;</span><span class="p">,</span> <span class="s2">&quot;sum&quot;</span><span class="p">,</span> <span class="s2">&quot;min&quot;</span><span class="p">,</span> <span class="s2">&quot;max&quot;</span><span class="p">,</span> <span class="s2">&quot;median&quot;</span><span class="p">,</span> <span class="s2">&quot;first&quot;</span><span class="p">,</span> <span class="s2">&quot;last&quot;</span><span class="p">}:</span>
+                    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Unsupported `how`. Use one of mean,sum,min,max,median,first,last or provide `agg`.&quot;</span><span class="p">)</span>
+                <span class="n">resampled</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">r</span><span class="p">,</span> <span class="n">how</span><span class="p">)()</span>
+
+        <span class="c1"># 4) Optional gap filling</span>
+        <span class="k">if</span> <span class="n">fill</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">fill</span> <span class="o">==</span> <span class="s2">&quot;ffill&quot;</span><span class="p">:</span>
+                <span class="n">resampled</span> <span class="o">=</span> <span class="n">resampled</span><span class="o">.</span><span class="n">ffill</span><span class="p">(</span><span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">fill</span> <span class="o">==</span> <span class="s2">&quot;bfill&quot;</span><span class="p">:</span>
+                <span class="n">resampled</span> <span class="o">=</span> <span class="n">resampled</span><span class="o">.</span><span class="n">bfill</span><span class="p">(</span><span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">fill</span> <span class="o">==</span> <span class="s2">&quot;interpolate&quot;</span><span class="p">:</span>
+                <span class="c1"># numeric interpolation only; adjust method if needed</span>
+                <span class="n">resampled</span> <span class="o">=</span> <span class="n">resampled</span><span class="o">.</span><span class="n">interpolate</span><span class="p">(</span><span class="n">limit</span><span class="o">=</span><span class="n">limit</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Unsupported fill. Use: ffill, bfill, interpolate.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># 5) Write to DB (ensure a time column exists for storage)</span>
+        <span class="n">_to_write</span> <span class="o">=</span> <span class="n">resampled</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="c1"># if time_col not in _to_write.columns:</span>
+        <span class="c1">#     _to_write[time_col] = _to_write.index</span>
+        <span class="n">to_write</span> <span class="o">=</span> <span class="n">_to_write</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+        <span class="c1"># to_write = self._normalize_time_column(to_write, time_col=time_col, to_utc=False)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_resampled_data</span> <span class="o">=</span> <span class="n">to_write</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">write_to_db</span><span class="p">(</span>
+            <span class="n">data</span><span class="o">=</span><span class="n">to_write</span><span class="p">,</span>
+            <span class="n">table_name</span><span class="o">=</span><span class="n">out_table</span><span class="p">,</span>
+            <span class="n">method</span><span class="o">=</span><span class="n">write_method</span><span class="p">,</span>
+            <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Resampled to rule=</span><span class="si">%s</span><span class="s2">, rows=</span><span class="si">%d</span><span class="s2">, written to &#39;</span><span class="si">%s</span><span class="s2">&#39;&quot;</span><span class="p">,</span> <span class="n">rule</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">to_write</span><span class="p">),</span> <span class="n">out_table</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">resampled</span><span class="p">,</span> <span class="n">rows</span></div>
+
+
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">_normalize_time_column</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+        <span class="n">time_col</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Datetime&quot;</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">to_utc</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">allow_na</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure `time_col` is a datetime, optionally convert to UTC, and serialize to ISO8601 string</span>
+<span class="sd">        so SQLite stores it losslessly and can parse it back.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">time_col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;time column &#39;</span><span class="si">{</span><span class="n">time_col</span><span class="si">}</span><span class="s2">&#39; not in DataFrame&quot;</span><span class="p">)</span>
+
+        <span class="n">out</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="n">ts</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="n">time_col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;coerce&quot;</span><span class="p">,</span> <span class="n">utc</span><span class="o">=</span><span class="n">to_utc</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">allow_na</span> <span class="ow">and</span> <span class="n">ts</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+            <span class="n">n</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">ts</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">n</span><span class="si">}</span><span class="s2"> rows have unparsable &#39;</span><span class="si">{</span><span class="n">time_col</span><span class="si">}</span><span class="s2">&#39; values&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Store as ISO string; pandas + sqlite is happiest with TEXT timestamps</span>
+        <span class="n">out</span><span class="p">[</span><span class="n">time_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">ts</span><span class="o">.</span><span class="n">dt</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2">T%H:%M:%S.</span><span class="si">%f</span><span class="s2">%z&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;(\+00:00)?$&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">regex</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">out</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">_coerce_time_index</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+        <span class="n">time_col</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Datetime&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Ensure `data` has a DatetimeIndex. If not, try to build one from `time_col`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">tz</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="c1"># keep tz-aware; you can localize/convert upstream as needed</span>
+                <span class="k">return</span> <span class="n">data</span><span class="o">.</span><span class="n">sort_index</span><span class="p">()</span>
+            <span class="k">return</span> <span class="n">data</span><span class="o">.</span><span class="n">sort_index</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">time_col</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">out</span><span class="p">[</span><span class="n">time_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="n">time_col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;raise&quot;</span><span class="p">)</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="n">time_col</span><span class="p">,</span> <span class="n">drop</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">sort_index</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">time_col</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">out</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">[</span><span class="n">time_col</span><span class="p">])</span>
+            <span class="k">return</span> <span class="n">out</span>
+
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;Data must have a DatetimeIndex or a time column named &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">time_col</span><span class="si">}</span><span class="s2">&#39; to build the index.&quot;</span>
+        <span class="p">)</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">_parse_lookback</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">period</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parse common look-back notations to Timedelta:</span>
+<span class="sd">        - &#39;24h&#39;, &#39;7d&#39;, &#39;30m&#39;, &#39;1h30m&#39;, &#39;PT15M&#39; (ISO8601-ish), &#39;P1D&#39;</span>
+<span class="sd">        Falls back to pandas Timedelta if exact parsing not matched.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">period</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">period</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;simulation_period must be a non-empty string (e.g., &#39;24h&#39;, &#39;7d&#39;).&quot;</span><span class="p">)</span>
+        <span class="n">s</span> <span class="o">=</span> <span class="n">period</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+        <span class="c1"># Try pandas first: handles &#39;7d&#39;, &#39;24h&#39;, &#39;30m&#39;, &#39;1h30m&#39;, &#39;2D&#39;, etc.</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="c1"># ISO8601-ish (very light support)</span>
+        <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;pt&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">s</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;p&quot;</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="c1"># let pandas try again; it actually handles many ISO forms</span>
+                <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">Timedelta</span><span class="p">(</span><span class="n">s</span><span class="o">.</span><span class="n">upper</span><span class="p">())</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+                <span class="k">pass</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unrecognized simulation_period format: </span><span class="si">{</span><span class="n">period</span><span class="si">!r}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+
+
+<div class="viewcode-block" id="DataBase.extract_simulation_data">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase.extract_simulation_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">extract_simulation_data</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">start_date</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">end_date</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">simulation_period</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">simulation_mode</span><span class="p">:</span> <span class="n">SimulationMode</span> <span class="o">=</span> <span class="s2">&quot;historical&quot;</span><span class="p">,</span>
+        <span class="n">out_table</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;simulation_data&quot;</span><span class="p">,</span>
+        <span class="n">time_col</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Datetime&quot;</span><span class="p">,</span>
+        <span class="n">write_method</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;fail&quot;</span><span class="p">,</span> <span class="s2">&quot;replace&quot;</span><span class="p">,</span> <span class="s2">&quot;append&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;replace&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Slice a time series for simulation and persist it to the local DB.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        data : pd.DataFrame</span>
+<span class="sd">            Source data. Must have a DatetimeIndex or a time column (default &#39;ts&#39;).</span>
+<span class="sd">        start_date, end_date : str | None</span>
+<span class="sd">            Historical window bounds (inclusive). Used when simulation_mode=&#39;historical&#39;.</span>
+<span class="sd">            Parsed with dateutil.parser.parse.</span>
+<span class="sd">        simulation_period : str | None</span>
+<span class="sd">            Look-back window (e.g., &#39;24h&#39;, &#39;7d&#39;, &#39;90m&#39;). Used when simulation_mode=&#39;real-time&#39;.</span>
+<span class="sd">        simulation_mode : {&#39;real-time&#39;,&#39;historical&#39;}</span>
+<span class="sd">            Selection mode.</span>
+<span class="sd">        out_table : str</span>
+<span class="sd">            Destination table name in local SQLite.</span>
+<span class="sd">        time_col : str</span>
+<span class="sd">            Name of the time column (used if DataFrame has no DatetimeIndex).</span>
+<span class="sd">        write_method : {&#39;fail&#39;,&#39;replace&#39;,&#39;append&#39;}</span>
+<span class="sd">            pandas.to_sql if_exists behavior for writing the slice.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        (df_slice, rows_written)</span>
+<span class="sd">            The sliced DataFrame and number of rows written to `out_table`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="k">if</span> <span class="n">data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_raw_data</span>
+
+        <span class="c1"># 1) Ensure a DatetimeIndex</span>
+        <span class="n">tsdf</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_coerce_time_index</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">time_col</span><span class="o">=</span><span class="n">time_col</span><span class="p">)</span>
+
+        <span class="c1"># 2) Slice by mode</span>
+        <span class="k">if</span> <span class="n">simulation_mode</span> <span class="o">==</span> <span class="s2">&quot;real-time&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">simulation_period</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;simulation_period is required for simulation_mode=&#39;real-time&#39;.&quot;</span><span class="p">)</span>
+            <span class="n">lookback</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_parse_lookback</span><span class="p">(</span><span class="n">simulation_period</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">tsdf</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Input data is empty; cannot compute real-time window.&quot;</span><span class="p">)</span>
+            <span class="n">last_idx</span> <span class="o">=</span> <span class="n">tsdf</span><span class="o">.</span><span class="n">index</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">first_idx</span> <span class="o">=</span> <span class="n">last_idx</span> <span class="o">-</span> <span class="n">lookback</span>
+            <span class="n">df_slice</span> <span class="o">=</span> <span class="n">tsdf</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">tsdf</span><span class="o">.</span><span class="n">index</span> <span class="o">&gt;</span> <span class="n">first_idx</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s1">&#39;Real-time slice: last=</span><span class="si">%s</span><span class="s1">, lookback=</span><span class="si">%s</span><span class="s1">, rows=</span><span class="si">%d</span><span class="s1">&#39;</span><span class="p">,</span>
+                <span class="n">last_idx</span><span class="p">,</span> <span class="n">lookback</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">df_slice</span><span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="k">elif</span> <span class="n">simulation_mode</span> <span class="o">==</span> <span class="s2">&quot;historical&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">start_date</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">end_date</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;start_date and end_date are required for &#39;historical&#39; mode.&quot;</span><span class="p">)</span>
+            <span class="n">start</span> <span class="o">=</span> <span class="n">dtparser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">start_date</span><span class="p">)</span>
+            <span class="n">end</span> <span class="o">=</span> <span class="n">dtparser</span><span class="o">.</span><span class="n">parse</span><span class="p">(</span><span class="n">end_date</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">start</span> <span class="o">&gt;</span> <span class="n">end</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;start_date </span><span class="si">{</span><span class="n">start</span><span class="si">}</span><span class="s2"> is after end_date </span><span class="si">{</span><span class="n">end</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+            <span class="c1"># Pandas loc on DateTimeIndex is inclusive for strings; ensure both datetimes</span>
+            <span class="n">df_slice</span> <span class="o">=</span> <span class="n">tsdf</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">start</span><span class="p">:</span><span class="n">end</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="s1">&#39;Historical slice: start=</span><span class="si">%s</span><span class="s1">, end=</span><span class="si">%s</span><span class="s1">, rows=</span><span class="si">%d</span><span class="s1">&#39;</span><span class="p">,</span>
+                <span class="n">start</span><span class="p">,</span> <span class="n">end</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">df_slice</span><span class="p">)</span>
+            <span class="p">)</span>
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;simulation_mode must be &#39;real-time&#39; or &#39;historical&#39;.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># 3) Persist to local DB</span>
+        <span class="k">if</span> <span class="n">df_slice</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Simulation slice produced 0 rows; table &#39;</span><span class="si">%s</span><span class="s2">&#39; will be replaced with empty set.&quot;</span><span class="p">,</span> <span class="n">out_table</span><span class="p">)</span>
+
+        <span class="c1"># write as a regular table; ensure time column exists for storage</span>
+        <span class="n">_to_write</span> <span class="o">=</span> <span class="n">df_slice</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="c1"># if time_col not in _to_write.columns:</span>
+        <span class="c1">#     _to_write[time_col] = _to_write.index</span>
+
+        <span class="c1"># Optional: enforce normalized time strings for SQLite friendliness</span>
+        <span class="n">to_write</span> <span class="o">=</span> <span class="n">_to_write</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>
+        <span class="c1"># to_write = self._normalize_time_column(to_write, time_col=time_col, to_utc=False)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_simulation_data</span> <span class="o">=</span> <span class="n">to_write</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">write_to_db</span><span class="p">(</span>
+            <span class="n">data</span><span class="o">=</span><span class="n">to_write</span><span class="p">,</span>
+            <span class="n">table_name</span><span class="o">=</span><span class="n">out_table</span><span class="p">,</span>
+            <span class="n">method</span><span class="o">=</span><span class="n">write_method</span><span class="p">,</span>
+            <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>              <span class="c1"># don&#39;t persist the pandas index as an &#39;index&#39; column</span>
+            <span class="n">index_label</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Wrote </span><span class="si">%d</span><span class="s2"> simulation rows to table &#39;</span><span class="si">%s</span><span class="s2">&#39;.&quot;</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">out_table</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">df_slice</span><span class="p">,</span> <span class="n">rows</span> </div>
+
+
+<div class="viewcode-block" id="DataBase.format_data">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase.format_data">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">format_data</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">time_col</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;Datetime&quot;</span><span class="p">,</span>
+        <span class="c1"># keep behavior when dropping duplicate timestamps</span>
+        <span class="n">keep</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;first&quot;</span><span class="p">,</span> <span class="s2">&quot;last&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;last&quot;</span><span class="p">,</span>
+        <span class="c1"># optionally restrict which columns to convert; by default convert all non-datetime columns</span>
+        <span class="n">numeric_columns</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">out_table</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;formatted_data&quot;</span><span class="p">,</span>
+        <span class="n">write_method</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;fail&quot;</span><span class="p">,</span> <span class="s2">&quot;replace&quot;</span><span class="p">,</span> <span class="s2">&quot;append&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;replace&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Format a time series DataFrame and persist to the local SQLite.</span>
+
+<span class="sd">        Steps:</span>
+<span class="sd">        1) Ensure DatetimeIndex (from existing index or `time_col`)</span>
+<span class="sd">        2) Drop duplicate index entries</span>
+<span class="sd">        3) Convert selected columns to float, coercing non-numeric -&gt; NaN</span>
+<span class="sd">        4) Ensure index name is &#39;Datetime&#39;</span>
+<span class="sd">        5) Write to `out_table` (with index_label=&#39;Datetime&#39;)</span>
+<span class="sd">        Returns (formatted_df, rows_written)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">data</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;format_data: received empty DataFrame.&quot;</span><span class="p">)</span>
+            <span class="c1"># still create/replace an empty table with only the Datetime column</span>
+            <span class="n">empty</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">index</span><span class="o">=</span><span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">([],</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;Datetime&quot;</span><span class="p">))</span>
+            <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">write_to_db</span><span class="p">(</span><span class="n">empty</span><span class="o">.</span><span class="n">reset_index</span><span class="p">(),</span> <span class="n">out_table</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="n">write_method</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">empty</span><span class="p">,</span> <span class="n">rows</span>
+
+        <span class="c1"># 1) Ensure a DatetimeIndex (use existing index or build from `time_col`)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">):</span>
+            <span class="n">tsdf</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">time_col</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;format_data: DataFrame has no DatetimeIndex and missing time_col &#39;</span><span class="si">{</span><span class="n">time_col</span><span class="si">}</span><span class="s2">&#39;.&quot;</span>
+                <span class="p">)</span>
+            <span class="n">tsdf</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+            <span class="n">tsdf</span><span class="p">[</span><span class="n">time_col</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_datetime</span><span class="p">(</span><span class="n">tsdf</span><span class="p">[</span><span class="n">time_col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;coerce&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">tsdf</span><span class="p">[</span><span class="n">time_col</span><span class="p">]</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span><span class="o">.</span><span class="n">any</span><span class="p">():</span>
+                <span class="n">bad</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">tsdf</span><span class="p">[</span><span class="n">time_col</span><span class="p">]</span><span class="o">.</span><span class="n">isna</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">())</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;format_data: </span><span class="si">{</span><span class="n">bad</span><span class="si">}</span><span class="s2"> rows have invalid &#39;</span><span class="si">{</span><span class="n">time_col</span><span class="si">}</span><span class="s2">&#39; values.&quot;</span><span class="p">)</span>
+            <span class="n">tsdf</span> <span class="o">=</span> <span class="n">tsdf</span><span class="o">.</span><span class="n">set_index</span><span class="p">(</span><span class="n">time_col</span><span class="p">)</span>
+
+        <span class="c1"># 2) Drop duplicate timestamps (keep=first/last)</span>
+        <span class="k">if</span> <span class="n">tsdf</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">has_duplicates</span><span class="p">:</span>
+            <span class="n">before</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">tsdf</span><span class="p">)</span>
+            <span class="n">tsdf</span> <span class="o">=</span> <span class="n">tsdf</span><span class="p">[</span><span class="o">~</span><span class="n">tsdf</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">duplicated</span><span class="p">(</span><span class="n">keep</span><span class="o">=</span><span class="n">keep</span><span class="p">)]</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;format_data: dropped </span><span class="si">%d</span><span class="s2"> duplicate timestamps (keep=</span><span class="si">%s</span><span class="s2">).&quot;</span><span class="p">,</span> <span class="n">before</span> <span class="o">-</span> <span class="nb">len</span><span class="p">(</span><span class="n">tsdf</span><span class="p">),</span> <span class="n">keep</span><span class="p">)</span>
+
+        <span class="c1"># 3) Convert data columns to float (coerce non-numeric -&gt; NaN)</span>
+        <span class="c1"># Decide which columns to convert</span>
+        <span class="k">if</span> <span class="n">numeric_columns</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="c1"># all non-datetime columns (index holds the datetime already)</span>
+            <span class="n">cols_to_convert</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">tsdf</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cols_to_convert</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">numeric_columns</span><span class="p">)</span>
+
+        <span class="c1"># Apply conversion</span>
+        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">cols_to_convert</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">tsdf</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+                <span class="n">tsdf</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">to_numeric</span><span class="p">(</span><span class="n">tsdf</span><span class="p">[</span><span class="n">col</span><span class="p">],</span> <span class="n">errors</span><span class="o">=</span><span class="s2">&quot;coerce&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
+
+        <span class="c1"># 4) Ensure index name is &#39;Datetime&#39;</span>
+        <span class="n">tsdf</span><span class="o">.</span><span class="n">index</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DatetimeIndex</span><span class="p">(</span><span class="n">tsdf</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;Datetime&quot;</span><span class="p">)</span>
+
+        <span class="c1"># 5) Write to DB; store index as a proper Datetime column</span>
+        <span class="n">to_write</span> <span class="o">=</span> <span class="n">tsdf</span><span class="o">.</span><span class="n">reset_index</span><span class="p">()</span>  <span class="c1"># brings &#39;Datetime&#39; out as a column</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_formatted_data</span> <span class="o">=</span> <span class="n">to_write</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">write_to_db</span><span class="p">(</span>
+            <span class="n">data</span><span class="o">=</span><span class="n">to_write</span><span class="p">,</span>
+            <span class="n">table_name</span><span class="o">=</span><span class="n">out_table</span><span class="p">,</span>
+            <span class="n">method</span><span class="o">=</span><span class="n">write_method</span><span class="p">,</span>
+            <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>                  <span class="c1"># we already turned index into the &#39;Datetime&#39; column</span>
+            <span class="n">index_label</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;format_data: wrote </span><span class="si">%d</span><span class="s2"> rows to table &#39;</span><span class="si">%s</span><span class="s2">&#39;.&quot;</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">out_table</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">tsdf</span><span class="p">,</span> <span class="n">rows</span></div>
+
+
+   
+   
+
+    
+<div class="viewcode-block" id="DataBase.add_dataframe">
+<a class="viewcode-back" href="../../modules.html#wwtwin.database.DataBase.add_dataframe">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_dataframe</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span>
+        <span class="n">table_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">time_col</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">normalize_time</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">method</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;fail&quot;</span><span class="p">,</span> <span class="s2">&quot;replace&quot;</span><span class="p">,</span> <span class="s2">&quot;append&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;append&quot;</span><span class="p">,</span>
+        <span class="n">index</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">index_label</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="c1"># --- indexing options ---</span>
+        <span class="n">create_index</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">index_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">index_columns</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">unique</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Add an external DataFrame to the local SQLite database under `table_name`, with optional</span>
+<span class="sd">        time normalization and index creation.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        df : pd.DataFrame</span>
+<span class="sd">            Data to write.</span>
+<span class="sd">        table_name : str</span>
+<span class="sd">            Destination table name.</span>
+<span class="sd">        time_col : str | None, default None</span>
+<span class="sd">            If provided and present in df, treated as the time column.</span>
+<span class="sd">        normalize_time : bool, default True</span>
+<span class="sd">            If True and `time_col` is given, convert to datetime and serialize to ISO8601 strings.</span>
+<span class="sd">        method : {&#39;fail&#39;,&#39;replace&#39;,&#39;append&#39;}, default &#39;append&#39;</span>
+<span class="sd">            Behavior when table already exists.</span>
+<span class="sd">        index : bool, default False</span>
+<span class="sd">            Whether to persist the pandas index as a column.</span>
+<span class="sd">        index_label : str | None, default None</span>
+<span class="sd">            Column name for the persisted index if `index=True`.</span>
+<span class="sd">        create_index : bool, default True</span>
+<span class="sd">            Whether to create an index on the table after writing.</span>
+<span class="sd">        index_name : str | None, default None</span>
+<span class="sd">            Name of the index to create. If None, a sensible default is chosen.</span>
+<span class="sd">        index_columns : Sequence[str] | None, default None</span>
+<span class="sd">            Columns to index. If None and `time_col` is provided (and present), uses `[time_col]`.</span>
+<span class="sd">        unique : bool, default False</span>
+<span class="sd">            Create a UNIQUE index (fails on duplicates).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        (df_written, rows_written)</span>
+<span class="sd">            The DataFrame that was written (after optional normalization) and the row count.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;add_dataframe: received empty DataFrame, nothing written.&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">df</span><span class="p">,</span> <span class="mi">0</span>
+
+        <span class="n">out</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+        <span class="c1"># Normalize time column if requested</span>
+        <span class="k">if</span> <span class="n">normalize_time</span> <span class="ow">and</span> <span class="n">time_col</span> <span class="ow">and</span> <span class="n">time_col</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_normalize_time_column</span><span class="p">(</span><span class="n">out</span><span class="p">,</span> <span class="n">time_col</span><span class="o">=</span><span class="n">time_col</span><span class="p">,</span> <span class="n">to_utc</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+        <span class="c1"># Write to DB</span>
+        <span class="n">rows</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">write_to_db</span><span class="p">(</span>
+            <span class="n">data</span><span class="o">=</span><span class="n">out</span><span class="p">,</span>
+            <span class="n">table_name</span><span class="o">=</span><span class="n">table_name</span><span class="p">,</span>
+            <span class="n">method</span><span class="o">=</span><span class="n">method</span><span class="p">,</span>
+            <span class="n">index</span><span class="o">=</span><span class="n">index</span><span class="p">,</span>
+            <span class="n">index_label</span><span class="o">=</span><span class="n">index_label</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;add_dataframe: wrote </span><span class="si">%d</span><span class="s2"> rows to table &#39;</span><span class="si">%s</span><span class="s2">&#39;.&quot;</span><span class="p">,</span> <span class="n">rows</span><span class="p">,</span> <span class="n">table_name</span><span class="p">)</span>
+
+        <span class="c1"># Create index if requested</span>
+        <span class="k">if</span> <span class="n">create_index</span><span class="p">:</span>
+            <span class="n">cols</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">index_columns</span><span class="p">)</span> <span class="k">if</span> <span class="n">index_columns</span> <span class="k">else</span> <span class="p">(</span>
+                <span class="p">[</span><span class="n">time_col</span><span class="p">]</span> <span class="k">if</span> <span class="n">time_col</span> <span class="ow">and</span> <span class="n">time_col</span> <span class="ow">in</span> <span class="n">out</span><span class="o">.</span><span class="n">columns</span> <span class="k">else</span> <span class="p">[]</span>
+            <span class="p">)</span>
+            <span class="k">if</span> <span class="n">cols</span><span class="p">:</span>
+                <span class="n">ix_name</span> <span class="o">=</span> <span class="n">index_name</span> <span class="ow">or</span> <span class="sa">f</span><span class="s2">&quot;ix_</span><span class="si">{</span><span class="n">table_name</span><span class="si">}</span><span class="s2">_</span><span class="si">{</span><span class="s1">&#39;_&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cols</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">ensure_index</span><span class="p">(</span><span class="n">table</span><span class="o">=</span><span class="n">table_name</span><span class="p">,</span> <span class="n">index_name</span><span class="o">=</span><span class="n">ix_name</span><span class="p">,</span> <span class="n">columns</span><span class="o">=</span><span class="n">cols</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="n">unique</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;add_dataframe: created </span><span class="si">%s</span><span class="s2">index &#39;</span><span class="si">%s</span><span class="s2">&#39; on </span><span class="si">%s</span><span class="s2">(</span><span class="si">%s</span><span class="s2">).&quot;</span><span class="p">,</span>
+                                <span class="s2">&quot;UNIQUE &quot;</span> <span class="k">if</span> <span class="n">unique</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">ix_name</span><span class="p">,</span> <span class="n">table_name</span><span class="p">,</span> <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cols</span><span class="p">))</span>
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="s2">&quot;add_dataframe: failed to create index &#39;</span><span class="si">%s</span><span class="s2">&#39; on </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                                    <span class="n">ix_name</span><span class="p">,</span> <span class="n">table_name</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">rows</span></div>
+</div>
+
+
+
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">wwtwin</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">wwtwin.database</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2025, Saba Daneshgar.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.2.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>

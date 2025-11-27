@@ -1,0 +1,35 @@
+Metadata-Version: 2.4
+Name: wwtwin
+Version: 0.0.0
+Summary: Digital Twin package for water resource recovery facilities
+Author-email: Saba Daneshgar <sabadaneshgar@gmail.com>
+Project-URL: Homepage, https://github.com/UGentBIOMATH/wwtwin
+Project-URL: Issues, https://github.com/UGentBIOMATH/wwtwin/issues
+Classifier: Development Status :: 1 - Pre-Alpha
+Classifier: Programming Language :: Python :: 3
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: numpy>=2.2.2
+Requires-Dist: dateutils>=0.6.6
+Requires-Dist: scipy>=1.15.1
+Requires-Dist: matplotlib>=3.10.0
+Requires-Dist: statsmodels>=0.14.4
+Requires-Dist: xlrd>=2.0.1
+Requires-Dist: scikit-learn>=1.7.1
+Requires-Dist: pyyaml>=6.0.2
+Requires-Dist: wwdata>=0.2.0
+Requires-Dist: sqlalchemy>=2.0.37
+Requires-Dist: openpyxl>=3.1.5
+Requires-Dist: toml>=0.10.2
+Dynamic: license-file
+
+## wwtwin
+-----
+
+
+wwtwin is a python package for creating digital twin pipelines for (waste)water systems.
+
+* Free software: GNU General Public License v3
+* Developed at BIOMATH, Ghent University

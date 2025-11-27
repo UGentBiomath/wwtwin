@@ -22,7 +22,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from __future__ import annotations
 
 
-from database_functions import create_database_connection, create_dataframe, read_files
+from .database_functions import create_database_connection, create_dataframe, read_files
 import pandas as pd
 import logging
 
